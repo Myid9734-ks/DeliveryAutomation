@@ -40,6 +40,14 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return
 
+        NotificationLogWriter.appendDebugEvent(
+            this,
+            "foreground_event",
+            "package" to packageName,
+            "eventType" to event.eventType,
+            "eventText" to event.text?.joinToString(" | ").orEmpty()
+        )
+
         val previousPackage = AppPrefs.lastForegroundPackage(this)
 
         if (previousPackage != packageName) {
@@ -51,12 +59,27 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
                     event.eventType,
                     event.text?.joinToString(" | ").orEmpty()
                 )
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "foreground_transition",
+                    "fromPackage" to previousPackage,
+                    "toPackage" to packageName,
+                    "eventType" to event.eventType,
+                    "selectedNavi" to AppPrefs.selectedNavi(this)
+                )
                 maybeFallbackToPreferredNavigation(packageName)
             }
             if (previousPackage in deliveryPackages && packageName !in deliveryPackages) {
                 deliveryExitGraceUntil = SystemClock.elapsedRealtime() + 1200L
                 AppPrefs.setTargetActive(this, false)
                 AppPrefs.setNavSessionActive(this, false)
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "delivery_foreground_exit",
+                    "fromPackage" to previousPackage,
+                    "toPackage" to packageName,
+                    "graceMs" to 1200
+                )
             }
             AppPrefs.setLastForegroundPackage(this, packageName)
         }
@@ -70,17 +93,37 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
                 navigationTakeoverUntil = now + 1500L
                 AppPrefs.setTargetActive(this, false)
                 AppPrefs.setNavSessionActive(this, true)
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "navigation_foreground_entered",
+                    "package" to packageName,
+                    "takeoverUntilMs" to navigationTakeoverUntil
+                )
             }
         }
 
         if (packageName in deliveryPackages) {
             if (now < deliveryExitGraceUntil) {
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "delivery_event_ignored",
+                    "package" to packageName,
+                    "reason" to "exit_grace",
+                    "remainingMs" to (deliveryExitGraceUntil - now)
+                )
                 return
             }
             captureDeliveryDestination()
             cancelPendingResume()
 
             if (now < navigationTakeoverUntil) {
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "delivery_event_ignored",
+                    "package" to packageName,
+                    "reason" to "navigation_takeover_window",
+                    "remainingMs" to (navigationTakeoverUntil - now)
+                )
                 return
             }
 
@@ -90,12 +133,23 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
                 AppPrefs.setTargetActive(this, true)
                 if (MusicSessionHelper.isYoutubeMusicPlaying(this)) {
                     MusicSessionHelper.pauseYoutubeMusic(this)
+                    NotificationLogWriter.appendDebugEvent(
+                        this,
+                        "music_pause_triggered",
+                        "package" to packageName,
+                        "reason" to "delivery_foreground"
+                    )
                 }
             }
             return
         }
 
         if (AppPrefs.isAutoPaused(this)) {
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "resume_scheduled",
+                "package" to packageName
+            )
             scheduleResumeAfterDeliveryExit(packageName)
         }
     }
@@ -108,6 +162,7 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         navigationTakeoverUntil = 0L
         deliveryExitGraceUntil = 0L
         AppPrefs.setLastForegroundPackage(this, "")
+        NotificationLogWriter.appendDebugEvent(this, "accessibility_service_connected")
     }
 
     private fun captureDeliveryDestination() {
@@ -123,6 +178,12 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             Intent(Intent.ACTION_VIEW, Uri.parse("about:blank")),
             AppPrefs.selectedNavi(this),
             result = "captured_destination:$picked"
+        )
+        NotificationLogWriter.appendDebugEvent(
+            this,
+            "delivery_destination_captured",
+            "picked" to picked,
+            "candidateCount" to candidates.size
         )
     }
 
@@ -197,11 +258,42 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         val cachedAt = AppPrefs.lastDeliveryDestinationAt(this)
         val now = SystemClock.elapsedRealtime()
 
-        if (cached.isBlank()) return
-        if (cachedAt <= 0L || now - cachedAt > 10 * 60 * 1000L) return
-        if (now - lastDirectNavFallbackAt < 1500L) return
+        if (cached.isBlank()) {
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "direct_nav_fallback_skipped",
+                "reason" to "empty_cache",
+                "selectedNavi" to selected
+            )
+            return
+        }
+        if (cachedAt <= 0L || now - cachedAt > 10 * 60 * 1000L) {
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "direct_nav_fallback_skipped",
+                "reason" to "cache_expired",
+                "selectedNavi" to selected
+            )
+            return
+        }
+        if (now - lastDirectNavFallbackAt < 1500L) {
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "direct_nav_fallback_skipped",
+                "reason" to "rate_limited",
+                "selectedNavi" to selected
+            )
+            return
+        }
 
         lastDirectNavFallbackAt = now
+        NotificationLogWriter.appendDebugEvent(
+            this,
+            "direct_nav_fallback_attempt",
+            "selectedNavi" to selected,
+            "cachedDestination" to cached,
+            "toPackage" to toPackage
+        )
         launchPreferredNavigation(selected, cached)
     }
 
@@ -230,12 +322,27 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
                 selected,
                 result = "direct_nav_fallback_ok"
             )
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "direct_nav_fallback_result",
+                "result" to "ok",
+                "selectedNavi" to selected,
+                "targetPackage" to targetPackage
+            )
         } catch (e: Exception) {
             NotificationLogWriter.appendNavigationIntent(
                 this,
                 null,
                 selected,
                 result = "direct_nav_fallback_fail:${e.javaClass.simpleName}:${e.message}"
+            )
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "direct_nav_fallback_result",
+                "result" to "fail",
+                "selectedNavi" to selected,
+                "targetPackage" to targetPackage,
+                "error" to "${e.javaClass.simpleName}: ${e.message}"
             )
         }
     }

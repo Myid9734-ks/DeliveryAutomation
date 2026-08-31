@@ -10,6 +10,8 @@ object AppPrefs {
  fun isAutoPaused(c:Context)=p(c).getBoolean("auto_paused",false); fun setAutoPaused(c:Context,v:Boolean)=p(c).edit().putBoolean("auto_paused",v).apply()
  fun isResumePending(c:Context)=p(c).getBoolean("resume_pending",false); fun setResumePending(c:Context,v:Boolean)=p(c).edit().putBoolean("resume_pending",v).apply()
  fun resumeRequestedAt(c:Context)=p(c).getLong("resume_requested_at",0L); fun setResumeRequestedAt(c:Context,v:Long)=p(c).edit().putLong("resume_requested_at",v).apply()
+ fun resumeRetryCount(c:Context)=p(c).getInt("resume_retry_count",0); fun setResumeRetryCount(c:Context,v:Int)=p(c).edit().putInt("resume_retry_count",v).apply()
+ fun isResumeRetryScheduled(c:Context)=p(c).getBoolean("resume_retry_scheduled",false); fun setResumeRetryScheduled(c:Context,v:Boolean)=p(c).edit().putBoolean("resume_retry_scheduled",v).apply()
  fun isTargetActive(c:Context)=p(c).getBoolean("target_active",false); fun setTargetActive(c:Context,v:Boolean)=p(c).edit().putBoolean("target_active",v).apply()
  fun isNavSessionActive(c:Context)=p(c).getBoolean("nav_session_active",false); fun setNavSessionActive(c:Context,v:Boolean)=p(c).edit().putBoolean("nav_session_active",v).apply()
  fun autoPauseAt(c:Context)=p(c).getLong("auto_pause_at",0L); fun setAutoPauseAt(c:Context,v:Long)=p(c).edit().putLong("auto_pause_at",v).apply()

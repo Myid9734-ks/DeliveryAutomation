@@ -27,6 +27,20 @@ object NotificationLogWriter {
     fun isDeliveryPackage(packageName: String?): Boolean = packageName in deliveryPackages
 
     @Synchronized
+    fun appendDebugEvent(context: Context, event: String, vararg fields: Pair<String, Any?>) {
+        val log = buildString {
+            appendLine("============================================================")
+            appendLine("유형=디버그이벤트")
+            appendLine("수신시각=${now()}")
+            appendLine("event=$event")
+            fields.forEach { (key, value) ->
+                appendLine("$key=${value?.toString().orEmpty()}")
+            }
+        }
+        safeWrite(context, log)
+    }
+
+    @Synchronized
     fun append(context: Context, sbn: StatusBarNotification) {
         if (!isDeliveryPackage(sbn.packageName)) return
 

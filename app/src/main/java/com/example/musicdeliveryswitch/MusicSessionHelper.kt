@@ -5,10 +5,15 @@ import android.content.Context
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 
 object MusicSessionHelper {
     const val YOUTUBE_MUSIC = "com.google.android.apps.youtube.music"
+    private const val RESUME_RETRY_MAX = 5
+    private const val RESUME_RETRY_DELAY_MS = 400L
+    private val retryHandler = Handler(Looper.getMainLooper())
 
     private fun youtubeController(context: Context): MediaController? {
         return try {
@@ -53,6 +58,8 @@ object MusicSessionHelper {
 
     fun resumeYoutubeMusicIfAutoPaused(context: Context) {
         if (!AppPrefs.isAutoPaused(context)) {
+            AppPrefs.setResumeRetryCount(context, 0)
+            AppPrefs.setResumeRetryScheduled(context, false)
             NotificationLogWriter.appendAutoOpenResult(
                 context,
                 YOUTUBE_MUSIC,
@@ -64,15 +71,39 @@ object MusicSessionHelper {
 
         val controller = youtubeController(context)
         if (controller == null) {
+            val retryCount = AppPrefs.resumeRetryCount(context)
             NotificationLogWriter.appendAutoOpenResult(
                 context,
                 YOUTUBE_MUSIC,
                 "resume_request",
                 "sent:no_controller"
             )
+            NotificationLogWriter.appendDebugEvent(
+                context,
+                "youtube_resume_retry",
+                "result" to "no_controller",
+                "retryCount" to retryCount,
+                "maxRetry" to RESUME_RETRY_MAX
+            )
+            if (retryCount < RESUME_RETRY_MAX && !AppPrefs.isResumeRetryScheduled(context)) {
+                AppPrefs.setResumeRetryCount(context, retryCount + 1)
+                AppPrefs.setResumeRetryScheduled(context, true)
+                retryHandler.postDelayed({
+                    AppPrefs.setResumeRetryScheduled(context, false)
+                    if (AppPrefs.isAutoPaused(context) && !AppPrefs.isTargetActive(context)) {
+                        resumeYoutubeMusicIfAutoPaused(context)
+                    } else {
+                        AppPrefs.setResumeRetryCount(context, 0)
+                    }
+                }, RESUME_RETRY_DELAY_MS)
+            } else {
+                AppPrefs.setResumeRetryCount(context, 0)
+            }
             return
         }
 
+        AppPrefs.setResumeRetryCount(context, 0)
+        AppPrefs.setResumeRetryScheduled(context, false)
         AppPrefs.setResumePending(context, true)
         AppPrefs.setResumeRequestedAt(context, SystemClock.elapsedRealtime())
         NotificationLogWriter.appendAutoOpenResult(

@@ -20,32 +20,65 @@ class NavigationRedirectActivity : Activity() {
 
     private fun handle(i: Intent?) {
         val selected = AppPrefs.selectedNavi(this)
-
         NotificationLogWriter.appendNavigationIntent(this, i, selected, result = "received")
+        NotificationLogWriter.appendDebugEvent(
+            this,
+            "navigation_request_received",
+            "selectedNavi" to selected,
+            "action" to i?.action,
+            "data" to i?.data?.toString(),
+            "package" to i?.`package`,
+            "component" to i?.component?.flattenToShortString()
+        )
 
         if (!AppPrefs.isNaviEnabled(this)) {
             NotificationLogWriter.appendNavigationIntent(this, i, selected, result = "navi_off")
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navigation_request_blocked",
+                "reason" to "navi_disabled",
+                "selectedNavi" to selected
+            )
             finish()
             return
         }
 
         val u = i?.data ?: run {
             NotificationLogWriter.appendNavigationIntent(this, i, selected, result = "no_data")
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navigation_request_blocked",
+                "reason" to "no_data",
+                "selectedNavi" to selected
+            )
             finish()
             return
         }
 
         if (selected == "KAKAONAVI" && (u.scheme == "kakaonavi" || u.scheme == "kakaonavi-sdk")) {
+            val passthroughIntent = Intent(Intent.ACTION_VIEW, u).apply {
+                setPackage("com.locnall.KimGiSa")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navigation_passthrough_attempt",
+                "scheme" to u.scheme,
+                "targetPackage" to "com.locnall.KimGiSa"
+            )
             try {
-                startActivity(Intent(Intent.ACTION_VIEW, u).apply {
-                    setPackage("com.locnall.KimGiSa")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
+                startActivity(passthroughIntent)
                 NotificationLogWriter.appendNavigationIntent(
                     this,
                     Intent(Intent.ACTION_VIEW, u).apply { setPackage("com.locnall.KimGiSa") },
                     selected,
                     result = "kakaonavi_passthrough_ok"
+                )
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "navigation_passthrough_result",
+                    "result" to "ok",
+                    "selectedNavi" to selected
                 )
             } catch (e: Exception) {
                 NotificationLogWriter.appendNavigationIntent(
@@ -53,6 +86,12 @@ class NavigationRedirectActivity : Activity() {
                     null,
                     selected,
                     result = "kakaonavi_passthrough_fail:${e.javaClass.simpleName}:${e.message}"
+                )
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "navigation_passthrough_result",
+                    "result" to "fail",
+                    "error" to "${e.javaClass.simpleName}: ${e.message}"
                 )
             }
             finish()
@@ -63,8 +102,23 @@ class NavigationRedirectActivity : Activity() {
         val query = destQuery(u).takeIf { !it.isNullOrBlank() }
             ?: AppPrefs.lastDeliveryDestinationText(this).takeIf { it.isNotBlank() }
 
+        NotificationLogWriter.appendDebugEvent(
+            this,
+            "navigation_destination_resolved",
+            "hasCoords" to (coords != null),
+            "hasQuery" to (!query.isNullOrBlank()),
+            "querySource" to if (destQuery(u).isNullOrBlank()) "cache" else "intent"
+        )
+
         if (coords == null && query == null) {
             NotificationLogWriter.appendNavigationIntent(this, i, selected, result = "dest_parse_failed")
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navigation_request_blocked",
+                "reason" to "destination_parse_failed",
+                "selectedNavi" to selected,
+                "data" to u.toString()
+            )
             Toast.makeText(this, "Destination could not be read.", Toast.LENGTH_SHORT).show()
             finish()
             return
@@ -72,9 +126,23 @@ class NavigationRedirectActivity : Activity() {
 
         if (coords != null) {
             NotificationLogWriter.appendNavigationIntent(this, i, selected, coords.first, coords.second, "dest_coords_ok")
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navigation_route_launch",
+                "mode" to "coords",
+                "lat" to coords.first,
+                "lon" to coords.second,
+                "query" to query
+            )
             open(coords.first, coords.second, query)
         } else {
             NotificationLogWriter.appendNavigationIntent(this, i, selected, result = "query_fallback:$query")
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navigation_route_launch",
+                "mode" to "query",
+                "query" to query
+            )
             open(null, null, query)
         }
 
@@ -106,8 +174,9 @@ class NavigationRedirectActivity : Activity() {
     private fun open(lat: String?, lon: String?, query: String? = null) {
         val defaultName = Uri.encode("delivery")
         val searchName = Uri.encode(query ?: "delivery")
+        val selected = AppPrefs.selectedNavi(this)
 
-        val target = when (AppPrefs.selectedNavi(this)) {
+        val target = when (selected) {
             "KAKAONAVI" -> if (lat != null && lon != null) {
                 Uri.parse("kakaonavi://navigate?name=$defaultName&x=$lon&y=$lat&coord_type=wgs84")
             } else {
@@ -133,12 +202,23 @@ class NavigationRedirectActivity : Activity() {
             }
         }
 
-        val targetPackage = when (AppPrefs.selectedNavi(this)) {
+        val targetPackage = when (selected) {
             "KAKAONAVI" -> "com.locnall.KimGiSa"
             "KAKAOMAP" -> "net.daum.android.map"
             "NAVER" -> "com.nhn.android.nmap"
             else -> "com.skt.tmap.ku"
         }
+
+        NotificationLogWriter.appendDebugEvent(
+            this,
+            "navigation_launch_prepared",
+            "selectedNavi" to selected,
+            "targetPackage" to targetPackage,
+            "targetUri" to target.toString(),
+            "lat" to lat,
+            "lon" to lon,
+            "query" to query
+        )
 
         try {
             startActivity(Intent(Intent.ACTION_VIEW, target).apply {
@@ -148,16 +228,38 @@ class NavigationRedirectActivity : Activity() {
             NotificationLogWriter.appendNavigationIntent(
                 this,
                 Intent(Intent.ACTION_VIEW, target).apply { setPackage(targetPackage) },
-                AppPrefs.selectedNavi(this),
+                selected,
                 lat,
                 lon,
                 "selected_nav_launch_ok"
             )
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navigation_launch_result",
+                "result" to "ok",
+                "selectedNavi" to selected,
+                "targetPackage" to targetPackage
+            )
         } catch (_: ActivityNotFoundException) {
-            NotificationLogWriter.appendNavigationIntent(this, null, AppPrefs.selectedNavi(this), lat, lon, "selected_nav_missing")
+            NotificationLogWriter.appendNavigationIntent(this, null, selected, lat, lon, "selected_nav_missing")
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navigation_launch_result",
+                "result" to "missing",
+                "selectedNavi" to selected,
+                "targetPackage" to targetPackage
+            )
             Toast.makeText(this, "Selected navigation app is not installed.", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
-            NotificationLogWriter.appendNavigationIntent(this, null, AppPrefs.selectedNavi(this), lat, lon, "selected_nav_fail:${e.javaClass.simpleName}:${e.message}")
+            NotificationLogWriter.appendNavigationIntent(this, null, selected, lat, lon, "selected_nav_fail:${e.javaClass.simpleName}:${e.message}")
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navigation_launch_result",
+                "result" to "fail",
+                "selectedNavi" to selected,
+                "targetPackage" to targetPackage,
+                "error" to "${e.javaClass.simpleName}: ${e.message}"
+            )
             Toast.makeText(this, "Navigation launch failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }

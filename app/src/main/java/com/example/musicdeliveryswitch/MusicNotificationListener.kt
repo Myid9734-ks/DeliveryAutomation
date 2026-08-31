@@ -53,10 +53,32 @@ class MusicNotificationListener : NotificationListenerService() {
 
         if (NotificationLogWriter.isDeliveryPackage(sbn.packageName)) {
             NotificationLogWriter.append(this, sbn)
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "delivery_notification_posted",
+                "package" to sbn.packageName,
+                "key" to sbn.key,
+                "channelId" to if (Build.VERSION.SDK_INT >= 26) sbn.notification.channelId else null,
+                "autoOpenEnabled" to AppPrefs.isOrderAutoOpenEnabled(this)
+            )
 
-            // 실제 신규 주문/신규 배달 알림만 앱 화면으로 전환한다.
             if (AppPrefs.isOrderAutoOpenEnabled(this) && isNewOrderNotification(sbn)) {
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "new_order_detected",
+                    "package" to sbn.packageName,
+                    "channelId" to if (Build.VERSION.SDK_INT >= 26) sbn.notification.channelId else null,
+                    "action" to "open_delivery_app"
+                )
                 openDeliveryApp(sbn)
+            } else {
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "new_order_ignored",
+                    "package" to sbn.packageName,
+                    "autoOpenEnabled" to AppPrefs.isOrderAutoOpenEnabled(this),
+                    "matchedRule" to isNewOrderNotification(sbn)
+                )
             }
         }
 
@@ -83,8 +105,8 @@ class MusicNotificationListener : NotificationListenerService() {
         return when (sbn.packageName) {
             "com.woowahan.bros" ->
                 channelId == "BROS_DELIVERY_ALLOCATION_NOTI" &&
-                    title == "신규배달" &&
-                    text.contains("새로운 배달이 배정되었습니다")
+                    title == "배달" &&
+                    text.contains("새로운 배달이 배정되었습니다.")
 
             "com.coupang.mobile.eats.courier" ->
                 channelId == "COURIER_ASSIGNMENT" &&
@@ -96,22 +118,67 @@ class MusicNotificationListener : NotificationListenerService() {
     }
 
     private fun openDeliveryApp(sbn: StatusBarNotification) {
-        // 같은 주문 알림이 시스템 그룹 알림 등으로 짧은 시간 안에 중복 수신돼도 한 번만 연다.
         val now = SystemClock.elapsedRealtime()
         val previous = lastAutoOpenAt[sbn.packageName] ?: 0L
-        if (now - previous < 2000L) return
+        if (now - previous < 2000L) {
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "delivery_app_open_skipped",
+                "package" to sbn.packageName,
+                "reason" to "duplicate_suppression",
+                "elapsedMs" to (now - previous)
+            )
+            return
+        }
         lastAutoOpenAt[sbn.packageName] = now
 
-        // 알림을 직접 눌렀을 때와 같은 PendingIntent를 우선 사용한다.
-        // 이것이 일반 launchIntent보다 백그라운드 실행 제한에 덜 걸리고 정확한 주문 화면을 열 가능성이 높다.
+        NotificationLogWriter.appendDebugEvent(
+            this,
+            "delivery_app_open_attempt",
+            "package" to sbn.packageName,
+            "hasContentIntent" to (sbn.notification.contentIntent != null),
+            "hasLaunchIntent" to (packageManager.getLaunchIntentForPackage(sbn.packageName) != null)
+        )
+
         try {
-            sbn.notification.contentIntent?.send()
-            NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
-            return
+            val contentIntent = sbn.notification.contentIntent
+            if (contentIntent == null) {
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "delivery_app_open_fallback",
+                    "package" to sbn.packageName,
+                    "from" to "contentIntent",
+                    "reason" to "missing"
+                )
+            } else {
+                contentIntent.send()
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "delivery_app_switch_result",
+                    "package" to sbn.packageName,
+                    "method" to "contentIntent",
+                    "result" to "success"
+                )
+                return
+            }
         } catch (_: PendingIntent.CanceledException) {
-            // 아래 launchIntent로 재시도
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "delivery_app_open_fallback",
+                "package" to sbn.packageName,
+                "from" to "contentIntent",
+                "reason" to "canceled"
+            )
         } catch (e: Exception) {
             NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "delivery_app_open_fallback",
+                "package" to sbn.packageName,
+                "from" to "contentIntent",
+                "reason" to "${e.javaClass.simpleName}: ${e.message}"
+            )
         }
 
         try {
@@ -120,11 +187,33 @@ class MusicNotificationListener : NotificationListenerService() {
                 launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 startActivity(launch)
                 NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "성공")
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "delivery_app_switch_result",
+                    "package" to sbn.packageName,
+                    "method" to "launchIntent",
+                    "result" to "success"
+                )
             } else {
                 NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: 실행 Intent 없음")
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "delivery_app_switch_result",
+                    "package" to sbn.packageName,
+                    "method" to "launchIntent",
+                    "result" to "missing_launch_intent"
+                )
             }
         } catch (e: Exception) {
             NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "delivery_app_switch_result",
+                "package" to sbn.packageName,
+                "method" to "launchIntent",
+                "result" to "fail",
+                "error" to "${e.javaClass.simpleName}: ${e.message}"
+            )
         }
     }
 
@@ -146,6 +235,20 @@ class MusicNotificationListener : NotificationListenerService() {
                 "controller_attach",
                 if (controller == null) "none" else "attached"
             )
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "youtube_controller_state",
+                "result" to if (controller == null) "none" else "attached"
+            )
+            if (controller != null && AppPrefs.isAutoPaused(this) && AppPrefs.isResumePending(this)) {
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "youtube_controller_resume_trigger",
+                    "reason" to "controller_attached",
+                    "retryCount" to AppPrefs.resumeRetryCount(this)
+                )
+                MusicSessionHelper.resumeYoutubeMusicIfAutoPaused(this)
+            }
         } catch (_: SecurityException) {
             controller = null
             NotificationLogWriter.appendAutoOpenResult(
@@ -153,6 +256,11 @@ class MusicNotificationListener : NotificationListenerService() {
                 MusicSessionHelper.YOUTUBE_MUSIC,
                 "controller_attach",
                 "security_exception"
+            )
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "youtube_controller_state",
+                "result" to "security_exception"
             )
         }
     }

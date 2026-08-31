@@ -52,7 +52,11 @@ object MusicSessionHelper {
             "pause_request",
             "sent:playing"
         )
-        controller.transportControls.pause()
+        try {
+            controller.transportControls.pause()
+        } catch (e: Exception) {
+            NotificationLogWriter.appendDebugEvent(context, "music_pause_failed", "error" to "${e.javaClass.simpleName}: ${e.message}")
+        }
         return true
     }
 
@@ -112,6 +116,10 @@ object MusicSessionHelper {
             "resume_request",
             "sent:controller_found"
         )
-        controller.transportControls.play()
+        try {
+            controller.transportControls.play()
+        } catch (e: Exception) {
+            NotificationLogWriter.appendDebugEvent(context, "music_resume_failed", "error" to "${e.javaClass.simpleName}: ${e.message}")
+        }
     }
 }

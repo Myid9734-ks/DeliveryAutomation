@@ -8,24 +8,24 @@ import androidx.appcompat.app.AppCompatActivity
 import com.example.musicdeliveryswitch.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var b: ActivityMainBinding
-    private var ao = false
-    private var no = false
+    private lateinit var binding: ActivityMainBinding
+    private var accessibilityOpened = false
+    private var notificationOpened = false
 
-    override fun onCreate(x: Bundle?) {
-        super.onCreate(x)
-        b = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(b.root)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        b.switchNavi.isChecked = AppPrefs.isNaviEnabled(this)
-        b.switchOrderAutoOpen.isChecked = AppPrefs.isOrderAutoOpenEnabled(this)
-        b.switchMusic.isChecked = AppPrefs.isMusicEnabled(this)
+        binding.switchNavi.isChecked = AppPrefs.isNaviEnabled(this)
+        binding.switchOrderAutoOpen.isChecked = AppPrefs.isOrderAutoOpenEnabled(this)
+        binding.switchMusic.isChecked = AppPrefs.isMusicEnabled(this)
 
         when (AppPrefs.selectedNavi(this)) {
-            "KAKAONAVI" -> b.radioKakaoNavi.isChecked = true
-            "KAKAOMAP" -> b.radioKakaoMap.isChecked = true
-            "NAVER" -> b.radioNaver.isChecked = true
-            else -> b.radioTmap.isChecked = true
+            AppConstants.NAVI_KAKAONAVI -> binding.radioKakaoNavi.isChecked = true
+            AppConstants.NAVI_KAKAOMAP -> binding.radioKakaoMap.isChecked = true
+            AppConstants.NAVI_NAVER -> binding.radioNaver.isChecked = true
+            else -> binding.radioTmap.isChecked = true
         }
 
         NotificationLogWriter.appendDebugEvent(
@@ -37,7 +37,7 @@ class MainActivity : AppCompatActivity() {
             "musicEnabled" to AppPrefs.isMusicEnabled(this)
         )
 
-        b.switchNavi.setOnCheckedChangeListener { _, v ->
+        binding.switchNavi.setOnCheckedChangeListener { _, v ->
             AppPrefs.setNaviEnabled(this, v)
             NotificationLogWriter.appendDebugEvent(
                 this,
@@ -49,7 +49,7 @@ class MainActivity : AppCompatActivity() {
             status()
         }
 
-        b.switchOrderAutoOpen.setOnCheckedChangeListener { _, v ->
+        binding.switchOrderAutoOpen.setOnCheckedChangeListener { _, v ->
             AppPrefs.setOrderAutoOpenEnabled(this, v)
             NotificationLogWriter.appendDebugEvent(
                 this,
@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
             status()
         }
 
-        b.switchMusic.setOnCheckedChangeListener { _, v ->
+        binding.switchMusic.setOnCheckedChangeListener { _, v ->
             AppPrefs.setMusicEnabled(this, v)
             NotificationLogWriter.appendDebugEvent(
                 this,
@@ -70,16 +70,16 @@ class MainActivity : AppCompatActivity() {
                 "value" to v,
                 "source" to "switchMusic"
             )
-            if (!v) clear()
+            if (!v) resetMusicState()
             status()
         }
 
-        b.radioNavis.setOnCheckedChangeListener { _, id ->
+        binding.radioNavis.setOnCheckedChangeListener { _, id ->
             val selected = when (id) {
-                R.id.radioKakaoNavi -> "KAKAONAVI"
-                R.id.radioKakaoMap -> "KAKAOMAP"
-                R.id.radioNaver -> "NAVER"
-                else -> "TMAP"
+                R.id.radioKakaoNavi -> AppConstants.NAVI_KAKAONAVI
+                R.id.radioKakaoMap -> AppConstants.NAVI_KAKAOMAP
+                R.id.radioNaver -> AppConstants.NAVI_NAVER
+                else -> AppConstants.NAVI_TMAP
             }
             AppPrefs.setSelectedNavi(this, selected)
             NotificationLogWriter.appendDebugEvent(
@@ -92,9 +92,9 @@ class MainActivity : AppCompatActivity() {
             status()
         }
 
-        b.buttonAccessibility.setOnClickListener {
-            ao = true
-            no = false
+        binding.buttonAccessibility.setOnClickListener {
+            accessibilityOpened = true
+            notificationOpened = false
             NotificationLogWriter.appendDebugEvent(
                 this,
                 "settings_button_clicked",
@@ -103,8 +103,8 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
 
-        b.buttonNotificationAccess.setOnClickListener {
-            no = true
+        binding.buttonNotificationAccess.setOnClickListener {
+            notificationOpened = true
             NotificationLogWriter.appendDebugEvent(
                 this,
                 "settings_button_clicked",
@@ -117,10 +117,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         status()
-        b.root.post { permissions() }
+        binding.root.post { permissions() }
     }
 
-    private fun clear() {
+    private fun resetMusicState() {
         NotificationLogWriter.appendAutoOpenResult(
             this,
             MusicSessionHelper.YOUTUBE_MUSIC,
@@ -142,8 +142,8 @@ class MainActivity : AppCompatActivity() {
                 "permission" to "accessibility",
                 "action" to "open_settings"
             )
-            if (!ao) {
-                ao = true
+            if (!accessibilityOpened) {
+                accessibilityOpened = true
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
             return
@@ -156,8 +156,8 @@ class MainActivity : AppCompatActivity() {
                 "permission" to "notification_listener",
                 "action" to "open_settings"
             )
-            if (!no) {
-                no = true
+            if (!notificationOpened) {
+                notificationOpened = true
                 startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             }
             return
@@ -173,12 +173,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun status() {
         val n = when (AppPrefs.selectedNavi(this)) {
-            "KAKAONAVI" -> "KakaoNavi"
-            "KAKAOMAP" -> "KakaoMap"
-            "NAVER" -> "NaverMap"
+            AppConstants.NAVI_KAKAONAVI -> "KakaoNavi"
+            AppConstants.NAVI_KAKAOMAP -> "KakaoMap"
+            AppConstants.NAVI_NAVER -> "NaverMap"
             else -> "TMAP"
         }
-        b.textStatus.text = buildString {
+        binding.textStatus.text = buildString {
             append("Navi: ${if (AppPrefs.isNaviEnabled(this@MainActivity)) "ON" else "OFF"} ($n)\n")
             append("Order auto open: ${if (AppPrefs.isOrderAutoOpenEnabled(this@MainActivity)) "ON" else "OFF"}\n")
             append("Music: ${if (AppPrefs.isMusicEnabled(this@MainActivity)) "ON" else "OFF"}\n")

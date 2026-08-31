@@ -16,15 +16,11 @@ import java.util.Date
 import java.util.Locale
 
 object NotificationLogWriter {
+    private const val LOG_ENABLED = true
     private const val FILE_NAME = "배달자동화_알림로그.txt"
     private const val RELATIVE_PATH = "Download/DeliveryAutomation/"
 
-    private val deliveryPackages = setOf(
-        "com.woowahan.bros",
-        "com.coupang.mobile.eats.courier"
-    )
-
-    fun isDeliveryPackage(packageName: String?): Boolean = packageName in deliveryPackages
+    fun isDeliveryPackage(packageName: String?): Boolean = packageName in AppConstants.DELIVERY_PACKAGES
 
     @Synchronized
     fun appendDebugEvent(context: Context, event: String, vararg fields: Pair<String, Any?>) {
@@ -47,11 +43,7 @@ object NotificationLogWriter {
         val n = sbn.notification
         val e = n.extras
         val timestamp = now()
-        val appName = when (sbn.packageName) {
-            "com.woowahan.bros" -> "배민"
-            "com.coupang.mobile.eats.courier" -> "쿠팡"
-            else -> sbn.packageName
-        }
+        val appName = AppConstants.deliveryAppName(sbn.packageName)
 
         val lines = e?.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
             ?.joinToString(" | ") { it.toString() }
@@ -130,11 +122,7 @@ object NotificationLogWriter {
 
     @Synchronized
     fun appendAutoOpenResult(context: Context, packageName: String, method: String, result: String) {
-        val appName = when (packageName) {
-            "com.woowahan.bros" -> "배민"
-            "com.coupang.mobile.eats.courier" -> "쿠팡"
-            else -> packageName
-        }
+        val appName = AppConstants.deliveryAppName(packageName)
         val log = buildString {
             appendLine("============================================================")
             appendLine("유형=신규주문_자동열기")
@@ -162,6 +150,7 @@ object NotificationLogWriter {
     private fun now(): String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.KOREA).format(Date())
 
     private fun safeWrite(context: Context, text: String) {
+        if (!LOG_ENABLED) return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) appendToDownloads(context, text)
             else appendToAppExternal(context, text)

@@ -1,21 +1,86 @@
 package com.example.musicdeliveryswitch
+
 import android.content.Context
+
 object AppPrefs {
- private const val FILE="delivery_automation_prefs"
- private fun p(c:Context)=c.getSharedPreferences(FILE,Context.MODE_PRIVATE)
- fun isMusicEnabled(c:Context)=p(c).getBoolean("music_enabled",true); fun setMusicEnabled(c:Context,v:Boolean)=p(c).edit().putBoolean("music_enabled",v).apply()
- fun isNaviEnabled(c:Context)=p(c).getBoolean("navi_enabled",true); fun setNaviEnabled(c:Context,v:Boolean)=p(c).edit().putBoolean("navi_enabled",v).apply()
- fun isOrderAutoOpenEnabled(c:Context)=p(c).getBoolean("order_auto_open_enabled",true); fun setOrderAutoOpenEnabled(c:Context,v:Boolean)=p(c).edit().putBoolean("order_auto_open_enabled",v).apply()
- fun selectedNavi(c:Context)=p(c).getString("selected_navi","TMAP")?:"TMAP"; fun setSelectedNavi(c:Context,v:String)=p(c).edit().putString("selected_navi",v).apply()
- fun isAutoPaused(c:Context)=p(c).getBoolean("auto_paused",false); fun setAutoPaused(c:Context,v:Boolean)=p(c).edit().putBoolean("auto_paused",v).apply()
- fun isResumePending(c:Context)=p(c).getBoolean("resume_pending",false); fun setResumePending(c:Context,v:Boolean)=p(c).edit().putBoolean("resume_pending",v).apply()
- fun resumeRequestedAt(c:Context)=p(c).getLong("resume_requested_at",0L); fun setResumeRequestedAt(c:Context,v:Long)=p(c).edit().putLong("resume_requested_at",v).apply()
- fun resumeRetryCount(c:Context)=p(c).getInt("resume_retry_count",0); fun setResumeRetryCount(c:Context,v:Int)=p(c).edit().putInt("resume_retry_count",v).apply()
- fun isResumeRetryScheduled(c:Context)=p(c).getBoolean("resume_retry_scheduled",false); fun setResumeRetryScheduled(c:Context,v:Boolean)=p(c).edit().putBoolean("resume_retry_scheduled",v).apply()
- fun isTargetActive(c:Context)=p(c).getBoolean("target_active",false); fun setTargetActive(c:Context,v:Boolean)=p(c).edit().putBoolean("target_active",v).apply()
- fun isNavSessionActive(c:Context)=p(c).getBoolean("nav_session_active",false); fun setNavSessionActive(c:Context,v:Boolean)=p(c).edit().putBoolean("nav_session_active",v).apply()
- fun autoPauseAt(c:Context)=p(c).getLong("auto_pause_at",0L); fun setAutoPauseAt(c:Context,v:Long)=p(c).edit().putLong("auto_pause_at",v).apply()
- fun lastForegroundPackage(c:Context)=p(c).getString("last_foreground_package","")?:""; fun setLastForegroundPackage(c:Context,v:String)=p(c).edit().putString("last_foreground_package",v).apply()
- fun lastDeliveryDestinationText(c:Context)=p(c).getString("last_delivery_destination_text","")?:""; fun setLastDeliveryDestinationText(c:Context,v:String)=p(c).edit().putString("last_delivery_destination_text",v).apply()
- fun lastDeliveryDestinationAt(c:Context)=p(c).getLong("last_delivery_destination_at",0L); fun setLastDeliveryDestinationAt(c:Context,v:Long)=p(c).edit().putLong("last_delivery_destination_at",v).apply()
+
+    private const val FILE = "delivery_automation_prefs"
+
+    private const val KEY_MUSIC_ENABLED = "music_enabled"
+    private const val KEY_NAVI_ENABLED = "navi_enabled"
+    private const val KEY_ORDER_AUTO_OPEN_ENABLED = "order_auto_open_enabled"
+    private const val KEY_SELECTED_NAVI = "selected_navi"
+    private const val KEY_AUTO_PAUSED = "auto_paused"
+    private const val KEY_RESUME_PENDING = "resume_pending"
+    private const val KEY_RESUME_REQUESTED_AT = "resume_requested_at"
+    private const val KEY_RESUME_RETRY_COUNT = "resume_retry_count"
+    private const val KEY_RESUME_RETRY_SCHEDULED = "resume_retry_scheduled"
+    private const val KEY_TARGET_ACTIVE = "target_active"
+    private const val KEY_NAV_SESSION_ACTIVE = "nav_session_active"
+    private const val KEY_AUTO_PAUSE_AT = "auto_pause_at"
+    private const val KEY_LAST_FOREGROUND_PACKAGE = "last_foreground_package"
+    private const val KEY_LAST_DELIVERY_DESTINATION_TEXT = "last_delivery_destination_text"
+    private const val KEY_LAST_DELIVERY_DESTINATION_AT = "last_delivery_destination_at"
+
+    private fun prefs(context: Context) = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+
+    fun isMusicEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_MUSIC_ENABLED, true)
+
+    fun setMusicEnabled(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_MUSIC_ENABLED, value).apply()
+
+    fun isNaviEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_NAVI_ENABLED, true)
+
+    fun setNaviEnabled(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_NAVI_ENABLED, value).apply()
+
+    fun isOrderAutoOpenEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_ORDER_AUTO_OPEN_ENABLED, true)
+
+    fun setOrderAutoOpenEnabled(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_ORDER_AUTO_OPEN_ENABLED, value).apply()
+
+    fun selectedNavi(context: Context): String = prefs(context).getString(KEY_SELECTED_NAVI, AppConstants.NAVI_TMAP) ?: AppConstants.NAVI_TMAP
+
+    fun setSelectedNavi(context: Context, value: String) = prefs(context).edit().putString(KEY_SELECTED_NAVI, value).apply()
+
+    fun isAutoPaused(context: Context): Boolean = prefs(context).getBoolean(KEY_AUTO_PAUSED, false)
+
+    fun setAutoPaused(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_AUTO_PAUSED, value).apply()
+
+    fun isResumePending(context: Context): Boolean = prefs(context).getBoolean(KEY_RESUME_PENDING, false)
+
+    fun setResumePending(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_RESUME_PENDING, value).apply()
+
+    fun resumeRequestedAt(context: Context): Long = prefs(context).getLong(KEY_RESUME_REQUESTED_AT, 0L)
+
+    fun setResumeRequestedAt(context: Context, value: Long) = prefs(context).edit().putLong(KEY_RESUME_REQUESTED_AT, value).apply()
+
+    fun resumeRetryCount(context: Context): Int = prefs(context).getInt(KEY_RESUME_RETRY_COUNT, 0)
+
+    fun setResumeRetryCount(context: Context, value: Int) = prefs(context).edit().putInt(KEY_RESUME_RETRY_COUNT, value).apply()
+
+    fun isResumeRetryScheduled(context: Context): Boolean = prefs(context).getBoolean(KEY_RESUME_RETRY_SCHEDULED, false)
+
+    fun setResumeRetryScheduled(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_RESUME_RETRY_SCHEDULED, value).apply()
+
+    fun isTargetActive(context: Context): Boolean = prefs(context).getBoolean(KEY_TARGET_ACTIVE, false)
+
+    fun setTargetActive(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_TARGET_ACTIVE, value).apply()
+
+    fun isNavSessionActive(context: Context): Boolean = prefs(context).getBoolean(KEY_NAV_SESSION_ACTIVE, false)
+
+    fun setNavSessionActive(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_NAV_SESSION_ACTIVE, value).apply()
+
+    fun autoPauseAt(context: Context): Long = prefs(context).getLong(KEY_AUTO_PAUSE_AT, 0L)
+
+    fun setAutoPauseAt(context: Context, value: Long) = prefs(context).edit().putLong(KEY_AUTO_PAUSE_AT, value).apply()
+
+    fun lastForegroundPackage(context: Context): String = prefs(context).getString(KEY_LAST_FOREGROUND_PACKAGE, "") ?: ""
+
+    fun setLastForegroundPackage(context: Context, value: String) = prefs(context).edit().putString(KEY_LAST_FOREGROUND_PACKAGE, value).apply()
+
+    fun lastDeliveryDestinationText(context: Context): String = prefs(context).getString(KEY_LAST_DELIVERY_DESTINATION_TEXT, "") ?: ""
+
+    fun setLastDeliveryDestinationText(context: Context, value: String) = prefs(context).edit().putString(KEY_LAST_DELIVERY_DESTINATION_TEXT, value).apply()
+
+    fun lastDeliveryDestinationAt(context: Context): Long = prefs(context).getLong(KEY_LAST_DELIVERY_DESTINATION_AT, 0L)
+
+    fun setLastDeliveryDestinationAt(context: Context, value: Long) = prefs(context).edit().putLong(KEY_LAST_DELIVERY_DESTINATION_AT, value).apply()
 }

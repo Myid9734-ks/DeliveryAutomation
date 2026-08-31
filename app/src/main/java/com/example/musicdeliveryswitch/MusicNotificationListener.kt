@@ -8,6 +8,8 @@ import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -16,6 +18,16 @@ class MusicNotificationListener : NotificationListenerService() {
 
     private var controller: MediaController? = null
     private val lastAutoOpenAt = mutableMapOf<String, Long>()
+
+    // 컨트롤러 부착 재시도 — YT Music 세션이 늦게 열리는 경우를 대비
+    private val attachRetryHandler = Handler(Looper.getMainLooper())
+    private var attachRetryScheduled = false
+    private var attachRetryCount = 0
+
+    companion object {
+        private const val ATTACH_RETRY_MAX = 6
+        private const val ATTACH_RETRY_DELAY_MS = 350L
+    }
 
     private val callback = object : MediaController.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackState?) {
@@ -48,10 +60,19 @@ class MusicNotificationListener : NotificationListenerService() {
         attachYoutubeController()
     }
 
+    override fun onListenerDisconnected() {
+        controller?.unregisterCallback(callback)
+        controller = null
+        attachRetryHandler.removeCallbacksAndMessages(null)
+        attachRetryScheduled = false
+        attachRetryCount = 0
+        super.onListenerDisconnected()
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
 
-        if (NotificationLogWriter.isDeliveryPackage(sbn.packageName)) {
+        if (sbn.packageName in AppConstants.DELIVERY_PACKAGES) {
             NotificationLogWriter.append(this, sbn)
             NotificationLogWriter.appendDebugEvent(
                 this,
@@ -89,12 +110,6 @@ class MusicNotificationListener : NotificationListenerService() {
         if (sbn?.packageName == MusicSessionHelper.YOUTUBE_MUSIC) attachYoutubeController()
     }
 
-    override fun onListenerDisconnected() {
-        controller?.unregisterCallback(callback)
-        controller = null
-        super.onListenerDisconnected()
-    }
-
     private fun isNewOrderNotification(sbn: StatusBarNotification): Boolean {
         val n = sbn.notification
         val extras = n.extras
@@ -103,14 +118,14 @@ class MusicNotificationListener : NotificationListenerService() {
         val channelId = if (Build.VERSION.SDK_INT >= 26) n.channelId.orEmpty() else ""
 
         return when (sbn.packageName) {
-            "com.woowahan.bros" ->
-                channelId == "BROS_DELIVERY_ALLOCATION_NOTI" &&
-                    title == "배달" &&
-                    text.contains("새로운 배달이 배정되었습니다.")
+            AppConstants.PKG_BAEMIN ->
+                channelId == AppConstants.BAEMIN_CHANNEL_NEW_ORDER &&
+                    title == AppConstants.BAEMIN_TITLE_NEW_ORDER &&
+                    text.contains(AppConstants.BAEMIN_TEXT_NEW_ORDER)
 
-            "com.coupang.mobile.eats.courier" ->
-                channelId == "COURIER_ASSIGNMENT" &&
-                    text.contains("주문을 수락해주세요") &&
+            AppConstants.PKG_COUPANG_EATS ->
+                channelId == AppConstants.COUPANG_CHANNEL_NEW_ORDER &&
+                    text.contains(AppConstants.COUPANG_TEXT_NEW_ORDER) &&
                     title.isNotBlank()
 
             else -> false
@@ -120,7 +135,7 @@ class MusicNotificationListener : NotificationListenerService() {
     private fun openDeliveryApp(sbn: StatusBarNotification) {
         val now = SystemClock.elapsedRealtime()
         val previous = lastAutoOpenAt[sbn.packageName] ?: 0L
-        if (now - previous < 2000L) {
+        if (now - previous < AppConstants.DELIVERY_AUTO_OPEN_DEDUPE_MS) {
             NotificationLogWriter.appendDebugEvent(
                 this,
                 "delivery_app_open_skipped",
@@ -229,6 +244,7 @@ class MusicNotificationListener : NotificationListenerService() {
             controller?.unregisterCallback(callback)
             controller = newController
             controller?.registerCallback(callback)
+
             NotificationLogWriter.appendAutoOpenResult(
                 this,
                 MusicSessionHelper.YOUTUBE_MUSIC,
@@ -238,30 +254,66 @@ class MusicNotificationListener : NotificationListenerService() {
             NotificationLogWriter.appendDebugEvent(
                 this,
                 "youtube_controller_state",
-                "result" to if (controller == null) "none" else "attached"
+                "result" to if (controller == null) "none" else "attached",
+                "retryCount" to attachRetryCount
             )
-            if (controller != null && AppPrefs.isAutoPaused(this) && AppPrefs.isResumePending(this)) {
-                NotificationLogWriter.appendDebugEvent(
-                    this,
-                    "youtube_controller_resume_trigger",
-                    "reason" to "controller_attached",
-                    "retryCount" to AppPrefs.resumeRetryCount(this)
-                )
-                MusicSessionHelper.resumeYoutubeMusicIfAutoPaused(this)
+
+            if (controller != null) {
+                attachRetryHandler.removeCallbacksAndMessages(null)
+                attachRetryScheduled = false
+                attachRetryCount = 0
+                // 컨트롤러가 연결됐고 재개 대기 중이면 즉시 재개 시도
+                if (AppPrefs.isAutoPaused(this) &&
+                    (AppPrefs.isResumePending(this) || !AppPrefs.isTargetActive(this))) {
+                    NotificationLogWriter.appendDebugEvent(
+                        this,
+                        "youtube_controller_resume_trigger",
+                        "reason" to "controller_attached",
+                        "retryCount" to AppPrefs.resumeRetryCount(this)
+                    )
+                    MusicSessionHelper.resumeYoutubeMusicIfAutoPaused(this)
+                }
+            } else if (shouldRetryControllerAttach()) {
+                scheduleControllerAttachRetry("attach_none")
             }
         } catch (_: SecurityException) {
             controller = null
             NotificationLogWriter.appendAutoOpenResult(
-                this,
-                MusicSessionHelper.YOUTUBE_MUSIC,
-                "controller_attach",
-                "security_exception"
+                this, MusicSessionHelper.YOUTUBE_MUSIC, "controller_attach", "security_exception"
             )
             NotificationLogWriter.appendDebugEvent(
-                this,
-                "youtube_controller_state",
-                "result" to "security_exception"
+                this, "youtube_controller_state", "result" to "security_exception"
             )
+            if (shouldRetryControllerAttach()) scheduleControllerAttachRetry("security_exception")
         }
+    }
+
+    private fun shouldRetryControllerAttach(): Boolean {
+        return AppPrefs.isAutoPaused(this) ||
+            AppPrefs.isResumePending(this) ||
+            AppPrefs.isTargetActive(this)
+    }
+
+    private fun scheduleControllerAttachRetry(reason: String) {
+        if (attachRetryScheduled || attachRetryCount >= ATTACH_RETRY_MAX) return
+
+        attachRetryScheduled = true
+        attachRetryCount++
+        NotificationLogWriter.appendDebugEvent(
+            this,
+            "youtube_controller_retry_scheduled",
+            "reason" to reason,
+            "retryCount" to attachRetryCount,
+            "maxRetry" to ATTACH_RETRY_MAX
+        )
+        attachRetryHandler.postDelayed({
+            attachRetryScheduled = false
+            attachYoutubeController()
+            if (controller == null) {
+                scheduleControllerAttachRetry("retry_still_none")
+            } else {
+                attachRetryCount = 0
+            }
+        }, ATTACH_RETRY_DELAY_MS)
     }
 }

@@ -55,52 +55,13 @@ class NavigationRedirectActivity : Activity() {
             return
         }
 
-        if (selected == "KAKAONAVI" && (u.scheme == "kakaonavi" || u.scheme == "kakaonavi-sdk")) {
-            val passthroughIntent = Intent(Intent.ACTION_VIEW, u).apply {
-                setPackage("com.locnall.KimGiSa")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            NotificationLogWriter.appendDebugEvent(
-                this,
-                "navigation_passthrough_attempt",
-                "scheme" to u.scheme,
-                "targetPackage" to "com.locnall.KimGiSa"
-            )
-            try {
-                startActivity(passthroughIntent)
-                NotificationLogWriter.appendNavigationIntent(
-                    this,
-                    Intent(Intent.ACTION_VIEW, u).apply { setPackage("com.locnall.KimGiSa") },
-                    selected,
-                    result = "kakaonavi_passthrough_ok"
-                )
-                NotificationLogWriter.appendDebugEvent(
-                    this,
-                    "navigation_passthrough_result",
-                    "result" to "ok",
-                    "selectedNavi" to selected
-                )
-            } catch (e: Exception) {
-                NotificationLogWriter.appendNavigationIntent(
-                    this,
-                    null,
-                    selected,
-                    result = "kakaonavi_passthrough_fail:${e.javaClass.simpleName}:${e.message}"
-                )
-                NotificationLogWriter.appendDebugEvent(
-                    this,
-                    "navigation_passthrough_result",
-                    "result" to "fail",
-                    "error" to "${e.javaClass.simpleName}: ${e.message}"
-                )
-            }
+        if (selected == AppConstants.NAVI_KAKAONAVI && (u.scheme == "kakaonavi" || u.scheme == "kakaonavi-sdk")) {
+            launchKakaoNaviPassthrough(u)
             finish()
             return
         }
 
-        val coords = dest(u)
-        val query = destQuery(u).takeIf { !it.isNullOrBlank() }
-            ?: AppPrefs.lastDeliveryDestinationText(this).takeIf { it.isNotBlank() }
+        val (coords, query) = resolveDestination(u)
 
         NotificationLogWriter.appendDebugEvent(
             this,
@@ -134,7 +95,7 @@ class NavigationRedirectActivity : Activity() {
                 "lon" to coords.second,
                 "query" to query
             )
-            open(coords.first, coords.second, query)
+            launchNavigation(coords.first, coords.second, query)
         } else {
             NotificationLogWriter.appendNavigationIntent(this, i, selected, result = "query_fallback:$query")
             NotificationLogWriter.appendDebugEvent(
@@ -143,10 +104,59 @@ class NavigationRedirectActivity : Activity() {
                 "mode" to "query",
                 "query" to query
             )
-            open(null, null, query)
+            launchNavigation(null, null, query)
         }
 
         finish()
+    }
+
+    private fun resolveDestination(u: Uri): Pair<Pair<String, String>?, String?> {
+        val coords = dest(u)
+        val query = destQuery(u).takeIf { !it.isNullOrBlank() }
+            ?: AppPrefs.lastDeliveryDestinationText(this).takeIf { it.isNotBlank() }
+        return Pair(coords, query)
+    }
+
+    private fun launchKakaoNaviPassthrough(u: Uri) {
+        val passthroughIntent = Intent(Intent.ACTION_VIEW, u).apply {
+            setPackage(AppConstants.PKG_KAKAONAVI)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val selected = AppPrefs.selectedNavi(this)
+        NotificationLogWriter.appendDebugEvent(
+            this,
+            "navigation_passthrough_attempt",
+            "scheme" to u.scheme,
+            "targetPackage" to AppConstants.PKG_KAKAONAVI
+        )
+        try {
+            startActivity(passthroughIntent)
+            NotificationLogWriter.appendNavigationIntent(
+                this,
+                Intent(Intent.ACTION_VIEW, u).apply { setPackage(AppConstants.PKG_KAKAONAVI) },
+                selected,
+                result = "kakaonavi_passthrough_ok"
+            )
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navigation_passthrough_result",
+                "result" to "ok",
+                "selectedNavi" to selected
+            )
+        } catch (e: Exception) {
+            NotificationLogWriter.appendNavigationIntent(
+                this,
+                null,
+                selected,
+                result = "kakaonavi_passthrough_fail:${e.javaClass.simpleName}:${e.message}"
+            )
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navigation_passthrough_result",
+                "result" to "fail",
+                "error" to "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     private fun dest(u: Uri): Pair<String, String>? {
@@ -171,25 +181,26 @@ class NavigationRedirectActivity : Activity() {
         return null
     }
 
-    private fun open(lat: String?, lon: String?, query: String? = null) {
+    private fun launchNavigation(lat: String?, lon: String?, query: String? = null) {
         val defaultName = Uri.encode("delivery")
         val searchName = Uri.encode(query ?: "delivery")
         val selected = AppPrefs.selectedNavi(this)
 
         val target = when (selected) {
-            "KAKAONAVI" -> if (lat != null && lon != null) {
+            AppConstants.NAVI_KAKAONAVI -> if (lat != null && lon != null) {
                 Uri.parse("kakaonavi://navigate?name=$defaultName&x=$lon&y=$lat&coord_type=wgs84")
             } else {
-                throw IllegalStateException("KakaoNavi requires destination coordinates")
+                Toast.makeText(this, "카카오내비는 좌표가 필요합니다.", Toast.LENGTH_SHORT).show()
+                return
             }
 
-            "KAKAOMAP" -> if (lat != null && lon != null) {
+            AppConstants.NAVI_KAKAOMAP -> if (lat != null && lon != null) {
                 Uri.parse("kakaomap://route?ep=$lat,$lon&by=car")
             } else {
                 Uri.parse("kakaomap://search?q=$searchName&viewType=MAP_CENTER&referrer=$packageName")
             }
 
-            "NAVER" -> if (lat != null && lon != null) {
+            AppConstants.NAVI_NAVER -> if (lat != null && lon != null) {
                 Uri.parse("nmap://navigation?dlat=$lat&dlng=$lon&dname=$defaultName&appname=$packageName")
             } else {
                 Uri.parse("nmap://search?query=$searchName&appname=$packageName")
@@ -203,10 +214,10 @@ class NavigationRedirectActivity : Activity() {
         }
 
         val targetPackage = when (selected) {
-            "KAKAONAVI" -> "com.locnall.KimGiSa"
-            "KAKAOMAP" -> "net.daum.android.map"
-            "NAVER" -> "com.nhn.android.nmap"
-            else -> "com.skt.tmap.ku"
+            AppConstants.NAVI_KAKAONAVI -> AppConstants.PKG_KAKAONAVI
+            AppConstants.NAVI_KAKAOMAP -> AppConstants.PKG_KAKAOMAP
+            AppConstants.NAVI_NAVER -> AppConstants.PKG_NAVERMAP
+            else -> AppConstants.PKG_TMAP
         }
 
         NotificationLogWriter.appendDebugEvent(

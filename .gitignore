@@ -1,0 +1,16 @@
+# Gradle and build outputs
+/.gradle/
+/build/
+/app/build/
+
+# IDE and local machine files
+/.idea/
+/.android/
+/.kotlin/
+/local.properties
+/Microsoft/
+
+# OS files
+desktop.ini
+Thumbs.db
+

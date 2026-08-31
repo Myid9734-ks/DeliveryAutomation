@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/app_surface"
+    android:fillViewport="true"
+    android:clipToPadding="false">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingTop="26dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="32dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="배달 자동화"
+            android:textColor="@color/app_text_primary"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="배달앱 · 내비 · 음악을 한 곳에서 제어합니다"
+            android:textColor="@color/app_text_secondary"
+            android:textSize="14sp" />
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            app:cardBackgroundColor="@color/app_card"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/app_outline"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="내비게이션"
+                    android:textColor="@color/app_text_primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="경로찾기 실행 시 선택한 내비로 전환"
+                    android:textColor="@color/app_text_secondary"
+                    android:textSize="13sp" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switchNavi"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:minHeight="48dp"
+                    android:text="내비 자동전환"
+                    android:textColor="@color/app_text_primary"
+                    android:textSize="15sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="6dp"
+                    android:layout_marginBottom="12dp"
+                    android:background="@color/app_outline" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="사용할 내비"
+                    android:textColor="@color/app_text_secondary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <RadioGroup
+                    android:id="@+id/radioNavis"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp">
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/radioTmap"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:text="티맵"
+                        android:textColor="@color/app_text_primary" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/radioKakaoNavi"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:text="카카오내비"
+                        android:textColor="@color/app_text_primary" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/radioKakaoMap"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:text="카카오맵"
+                        android:textColor="@color/app_text_primary" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/radioNaver"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:text="네이버지도"
+                        android:textColor="@color/app_text_primary" />
+                </RadioGroup>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            app:cardBackgroundColor="@color/app_card"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/app_outline"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="자동화"
+                    android:textColor="@color/app_text_primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switchOrderAutoOpen"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:minHeight="52dp"
+                    android:text="신규 주문 알림 시 앱 화면전환"
+                    android:textColor="@color/app_text_primary"
+                    android:textSize="15sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="4dp"
+                    android:background="@color/app_outline" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switchMusic"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="52dp"
+                    android:text="YouTube Music 자동 정지/재생"
+                    android:textColor="@color/app_text_primary"
+                    android:textSize="15sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            app:cardBackgroundColor="@color/app_primary_container"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="0dp"
+            app:strokeWidth="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="현재 상태"
+                    android:textColor="@color/app_text_primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/textStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="@color/app_text_primary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginTop="22dp"
+            android:text="필수 권한"
+            android:textColor="@color/app_text_primary"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonAccessibility"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:layout_marginTop="10dp"
+            android:text="1. 접근성 권한 설정"
+            android:textAllCaps="false"
+            android:textSize="15sp"
+            app:cornerRadius="16dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonNotificationAccess"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:layout_marginTop="10dp"
+            android:text="2. 알림 접근 권한 설정"
+            android:textAllCaps="false"
+            android:textSize="15sp"
+            app:cornerRadius="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:paddingHorizontal="4dp"
+            android:text="YouTube Music이 실제 재생 중일 때만 자동 정지하며, 이 앱이 정지시킨 경우에만 다시 재생합니다."
+            android:textColor="@color/app_text_secondary"
+            android:textSize="12sp" />
+
+    </LinearLayout>
+</ScrollView>

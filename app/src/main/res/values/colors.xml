@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="launcher_background">#071525</color>
+    <color name="app_primary">#2563EB</color>
+    <color name="app_primary_container">#E8F0FF</color>
+    <color name="app_surface">#F7F8FC</color>
+    <color name="app_card">#FFFFFF</color>
+    <color name="app_text_primary">#151B26</color>
+    <color name="app_text_secondary">#667085</color>
+    <color name="app_outline">#E4E7EC</color>
+</resources>

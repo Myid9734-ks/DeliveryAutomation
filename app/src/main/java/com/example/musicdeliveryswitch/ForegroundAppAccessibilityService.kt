@@ -109,7 +109,14 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             )
         }
 
-        AppPrefs.setLastForegroundPackage(this, packageName)
+        // grace 기간 중 배달앱의 빈 텍스트 이벤트(쿠팡 flicker)는 lastForeground 업데이트 생략
+        // → runnable이 이전 내비 패키지를 기억한 채 재개 처리할 수 있음
+        val isGraceFlicker = packageName in AppConstants.DELIVERY_PACKAGES &&
+            SystemClock.elapsedRealtime() < deliveryExitGraceUntil &&
+            event.text?.joinToString(" | ").orEmpty().isBlank()
+        if (!isGraceFlicker) {
+            AppPrefs.setLastForegroundPackage(this, packageName)
+        }
     }
 
     private fun handleNavigationForeground(packageName: String, now: Long) {
@@ -380,9 +387,7 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         pendingResumeRunnable = Runnable {
             if (pendingResumePackage != packageName) return@Runnable
             val currentPackage = AppPrefs.lastForegroundPackage(this)
-            val inDeliveryGrace = currentPackage in AppConstants.DELIVERY_PACKAGES &&
-                SystemClock.elapsedRealtime() < deliveryExitGraceUntil
-            if ((currentPackage in AppConstants.DELIVERY_PACKAGES && !inDeliveryGrace) ||
+            if (currentPackage in AppConstants.DELIVERY_PACKAGES ||
                 currentPackage in AppConstants.SYSTEM_DIALOG_PACKAGES ||
                 currentPackage in AppConstants.OVERLAY_TRANSITION_PACKAGES) {
                 handler.postDelayed(pendingResumeRunnable!!, delayMs)

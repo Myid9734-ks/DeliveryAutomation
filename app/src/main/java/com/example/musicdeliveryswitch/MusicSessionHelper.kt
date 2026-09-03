@@ -101,7 +101,15 @@ object MusicSessionHelper {
                     }
                 }, RESUME_RETRY_DELAY_MS)
             } else {
+                // 최대 재시도 초과 — autoPaused 플래그를 초기화해 영구 stuck 방지
                 AppPrefs.setResumeRetryCount(context, 0)
+                AppPrefs.setResumeRetryScheduled(context, false)
+                AppPrefs.setAutoPaused(context, false)
+                NotificationLogWriter.appendDebugEvent(
+                    context,
+                    "youtube_resume_retry_exhausted",
+                    "result" to "auto_paused_cleared"
+                )
             }
             return
         }

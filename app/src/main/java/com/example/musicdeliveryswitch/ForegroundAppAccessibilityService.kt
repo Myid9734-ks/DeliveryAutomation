@@ -172,6 +172,15 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
                     "package" to packageName,
                     "reason" to "delivery_foreground"
                 )
+            } else if (AppPrefs.isAutoPaused(this)) {
+                // 음악이 재생 중이 아닌데 autoPaused=true → stale 플래그 초기화
+                AppPrefs.setAutoPaused(this, false)
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "auto_paused_flag_cleared",
+                    "package" to packageName,
+                    "reason" to "stale_flag_on_delivery_foreground"
+                )
             }
         }
         return true

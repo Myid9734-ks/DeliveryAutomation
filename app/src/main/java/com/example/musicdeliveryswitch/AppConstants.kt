@@ -14,10 +14,10 @@ object AppConstants {
 
     // Notification matching
     const val BAEMIN_CHANNEL_NEW_ORDER = "BROS_DELIVERY_ALLOCATION_NOTI"
-    const val BAEMIN_TITLE_NEW_ORDER = "배달"
+    const val BAEMIN_TITLE_NEW_ORDER = "신규배달"
     const val BAEMIN_TEXT_NEW_ORDER = "새로운 배달이 배정되었습니다."
     const val COUPANG_CHANNEL_NEW_ORDER = "COURIER_ASSIGNMENT"
-    const val COUPANG_TEXT_NEW_ORDER = "주문을 수락해주세요"
+    const val COUPANG_TEXT_NEW_ORDER = "주문"
 
     // Navigation apps
     const val PKG_TMAP = "com.skt.tmap.ku"

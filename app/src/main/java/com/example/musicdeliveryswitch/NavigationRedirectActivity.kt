@@ -131,6 +131,8 @@ class NavigationRedirectActivity : Activity() {
         )
         try {
             startActivity(passthroughIntent)
+            AppPrefs.setLastDeliveryDestinationText(this, "")
+            AppPrefs.setLastDeliveryDestinationAt(this, 0L)
             NotificationLogWriter.appendNavigationIntent(
                 this,
                 Intent(Intent.ACTION_VIEW, u).apply { setPackage(AppConstants.PKG_KAKAONAVI) },
@@ -262,6 +264,8 @@ class NavigationRedirectActivity : Activity() {
                 setPackage(targetPackage)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             })
+            AppPrefs.setLastDeliveryDestinationText(this, "")
+            AppPrefs.setLastDeliveryDestinationAt(this, 0L)
             NotificationLogWriter.appendNavigationIntent(
                 this,
                 Intent(Intent.ACTION_VIEW, target).apply { setPackage(targetPackage) },

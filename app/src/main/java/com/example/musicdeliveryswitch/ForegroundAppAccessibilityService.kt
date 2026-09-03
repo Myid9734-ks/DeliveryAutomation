@@ -1,8 +1,6 @@
 package com.example.musicdeliveryswitch
 
 import android.accessibilityservice.AccessibilityService
-import android.content.Intent
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -13,7 +11,6 @@ import android.view.accessibility.AccessibilityWindowInfo
 class ForegroundAppAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private var lastDirectNavFallbackAt = 0L
 
     private var navigationTakeoverUntil = 0L
     private var deliveryExitGraceUntil = 0L
@@ -93,7 +90,6 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
                 "eventType" to event.eventType,
                 "selectedNavi" to AppPrefs.selectedNavi(this)
             )
-            maybeFallbackToPreferredNavigation(packageName)
         }
 
         if (previousPackage in AppConstants.DELIVERY_PACKAGES && packageName !in AppConstants.DELIVERY_PACKAGES) {
@@ -298,87 +294,6 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             "|\\d+[-\\s]?\\d*[동층호]"
         )
         return pattern.containsMatchIn(line)
-    }
-
-    private fun maybeFallbackToPreferredNavigation(toPackage: String) {
-        if (toPackage != AppConstants.PKG_TMAP && toPackage != AppConstants.PKG_KAKAONAVI) return
-
-        val selected = AppPrefs.selectedNavi(this)
-        if (selected == AppConstants.NAVI_TMAP) return
-
-        val cached = AppPrefs.lastDeliveryDestinationText(this).trim()
-        val cachedAt = AppPrefs.lastDeliveryDestinationAt(this)
-        val now = SystemClock.elapsedRealtime()
-
-        if (cached.isBlank()) {
-            NotificationLogWriter.appendDebugEvent(
-                this, "direct_nav_fallback_skipped", "reason" to "empty_cache", "selectedNavi" to selected
-            )
-            return
-        }
-        if (cachedAt <= 0L || now - cachedAt > AppConstants.DELIVERY_DEST_CACHE_EXPIRY_MS) {
-            NotificationLogWriter.appendDebugEvent(
-                this, "direct_nav_fallback_skipped", "reason" to "cache_expired", "selectedNavi" to selected
-            )
-            return
-        }
-        if (now - lastDirectNavFallbackAt < AppConstants.NAV_FALLBACK_RATE_LIMIT_MS) {
-            NotificationLogWriter.appendDebugEvent(
-                this, "direct_nav_fallback_skipped", "reason" to "rate_limited", "selectedNavi" to selected
-            )
-            return
-        }
-
-        lastDirectNavFallbackAt = now
-        NotificationLogWriter.appendDebugEvent(
-            this,
-            "direct_nav_fallback_attempt",
-            "selectedNavi" to selected,
-            "cachedDestination" to cached,
-            "toPackage" to toPackage
-        )
-        launchPreferredNavigation(selected, cached)
-    }
-
-    private fun launchPreferredNavigation(selected: String, query: String) {
-        val encoded = Uri.encode(query)
-        val target = when (selected) {
-            AppConstants.NAVI_KAKAOMAP -> Uri.parse("kakaomap://search?q=$encoded&viewType=MAP_CENTER&referrer=$packageName")
-            AppConstants.NAVI_NAVER -> Uri.parse("nmap://search?query=$encoded&appname=$packageName")
-            else -> return
-        }
-        val targetPackage = when (selected) {
-            AppConstants.NAVI_KAKAOMAP -> AppConstants.PKG_KAKAOMAP
-            AppConstants.NAVI_NAVER -> AppConstants.PKG_NAVERMAP
-            else -> return
-        }
-
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, target).apply {
-                setPackage(targetPackage)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
-            NotificationLogWriter.appendNavigationIntent(
-                this,
-                Intent(Intent.ACTION_VIEW, target).apply { setPackage(targetPackage) },
-                selected,
-                result = "direct_nav_fallback_ok"
-            )
-            NotificationLogWriter.appendDebugEvent(
-                this, "direct_nav_fallback_result", "result" to "ok",
-                "selectedNavi" to selected, "targetPackage" to targetPackage
-            )
-        } catch (e: Exception) {
-            NotificationLogWriter.appendNavigationIntent(
-                this, null, selected,
-                result = "direct_nav_fallback_fail:${e.javaClass.simpleName}:${e.message}"
-            )
-            NotificationLogWriter.appendDebugEvent(
-                this, "direct_nav_fallback_result", "result" to "fail",
-                "selectedNavi" to selected, "targetPackage" to targetPackage,
-                "error" to "${e.javaClass.simpleName}: ${e.message}"
-            )
-        }
     }
 
     private fun scheduleResumeAfterDeliveryExit(packageName: String, delayMs: Long) {

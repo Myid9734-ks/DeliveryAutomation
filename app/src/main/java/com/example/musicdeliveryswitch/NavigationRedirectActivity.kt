@@ -160,6 +160,11 @@ class NavigationRedirectActivity : Activity() {
     }
 
     private fun dest(u: Uri): Pair<String, String>? {
+        // kakaonavi-sdk://navigate?param={"destination":{"x":lon,"y":lat},...}
+        if (u.scheme == "kakaonavi-sdk") {
+            parseKakaoNaviSdkCoords(u)?.let { return it }
+        }
+
         u.getQueryParameter("ep")?.split(",")?.takeIf { it.size == 2 }?.let {
             return Pair(it[0].trim(), it[1].trim())
         }
@@ -169,7 +174,28 @@ class NavigationRedirectActivity : Activity() {
         return if (lat?.toDoubleOrNull() != null && lon?.toDoubleOrNull() != null) Pair(lat, lon) else null
     }
 
+    private fun parseKakaoNaviSdkCoords(u: Uri): Pair<String, String>? {
+        return try {
+            val paramStr = u.getQueryParameter("param") ?: return null
+            val dest = org.json.JSONObject(paramStr).optJSONObject("destination") ?: return null
+            val x = dest.optString("x").takeIf { it.isNotBlank() } ?: return null  // 경도
+            val y = dest.optString("y").takeIf { it.isNotBlank() } ?: return null  // 위도
+            if (x.toDoubleOrNull() != null && y.toDoubleOrNull() != null) Pair(y, x) else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun destQuery(u: Uri): String? {
+        if (u.scheme == "kakaonavi-sdk") {
+            try {
+                val paramStr = u.getQueryParameter("param")
+                if (!paramStr.isNullOrBlank()) {
+                    val name = org.json.JSONObject(paramStr).optJSONObject("destination")?.optString("name")
+                    if (!name.isNullOrBlank()) return name
+                }
+            } catch (_: Exception) {}
+        }
         return firstParam(u, "goalname", "dname", "name", "query", "q", "dest", "destination")
     }
 

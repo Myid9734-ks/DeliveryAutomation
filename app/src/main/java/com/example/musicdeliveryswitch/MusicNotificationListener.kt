@@ -39,6 +39,9 @@ class MusicNotificationListener : NotificationListenerService() {
             )
             if (state?.state != PlaybackState.STATE_PLAYING) return
             if (!AppPrefs.isAutoPaused(this@MusicNotificationListener)) return
+            // 배달앱이 포그라운드 상태면 방금 pause 요청이 간 것 — resume complete 처리하지 않음
+            // (resume + immediate pause 레이스로 autoPaused가 잘못 초기화되는 버그 방지)
+            if (AppPrefs.isTargetActive(this@MusicNotificationListener)) return
 
             val resumeAt = AppPrefs.resumeRequestedAt(this@MusicNotificationListener)
             val elapsed = SystemClock.elapsedRealtime() - if (resumeAt > 0L) resumeAt else AppPrefs.autoPauseAt(this@MusicNotificationListener)

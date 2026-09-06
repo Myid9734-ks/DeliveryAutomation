@@ -32,6 +32,16 @@ object AppConstants {
     const val NAVI_KAKAOMAP = "KAKAOMAP"
     const val NAVI_NAVER = "NAVER"
 
+    // 카카오내비 딥링크용 앱키 (카카오 개발자 콘솔 > 내 애플리케이션 > 앱 키 > REST API 키)
+    const val KAKAONAVI_APP_KEY = ""
+
+    fun naviPackageOf(navi: String): String = when (navi) {
+        NAVI_KAKAONAVI -> PKG_KAKAONAVI
+        NAVI_KAKAOMAP -> PKG_KAKAOMAP
+        NAVI_NAVER -> PKG_NAVERMAP
+        else -> PKG_TMAP
+    }
+
     // Timing (ms)
     const val DELIVERY_EXIT_GRACE_MS = 1200L
     const val NAVIGATION_TAKEOVER_MS = 1500L
@@ -41,6 +51,11 @@ object AppConstants {
     const val NAV_FALLBACK_RATE_LIMIT_MS = 1500L
     const val DELIVERY_DEST_CACHE_EXPIRY_MS = 10 * 60 * 1000L
     const val DELIVERY_AUTO_OPEN_DEDUPE_MS = 2000L
+
+    // 쿠팡 → 잘못된 네비 실행 시, 해당 네비 화면에서 목적지 텍스트 스캔
+    const val NAVI_DEST_SCAN_DELAY_MS = 1500L      // 첫 스캔 전 대기 (네비 UI 로딩 대기)
+    const val NAVI_DEST_SCAN_INTERVAL_MS = 1000L   // 재시도 간격
+    const val NAVI_DEST_SCAN_TIMEOUT_MS = 10_000L  // 최대 스캔 시간
 
     // System packages (resume scheduling special cases)
     val SYSTEM_DIALOG_PACKAGES = setOf(

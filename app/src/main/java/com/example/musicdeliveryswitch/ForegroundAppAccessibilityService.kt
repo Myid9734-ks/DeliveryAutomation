@@ -19,6 +19,15 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
     private var pendingResumePackage: String? = null
     private var pendingResumeRunnable: Runnable? = null
 
+    private data class PendingNaviScan(
+        val scanPackage: String,   // 목적지 스캔할 네비 앱 패키지
+        val expectedPkg: String,   // 리다이렉트 목표 네비 패키지
+        val selectedNavi: String,
+        val startedAt: Long
+    )
+    private var pendingNaviScan: PendingNaviScan? = null
+    private var pendingNaviScanRunnable: Runnable? = null
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
@@ -55,7 +64,7 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
 
         val now = SystemClock.elapsedRealtime()
 
-        handleNavigationForeground(packageName, now)
+        handleNavigationForeground(packageName, previousPackage, now)
 
         if (handleDeliveryForeground(packageName, now)) return
 
@@ -67,6 +76,7 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         cancelPendingResume()
+        cancelPendingNaviScan()
         navigationTakeoverUntil = 0L
         deliveryExitGraceUntil = 0L
         AppPrefs.setLastForegroundPackage(this, "")
@@ -107,6 +117,12 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             )
         }
 
+        // 스캔 중인 네비 앱에서 다른 앱으로 전환되면 스캔 취소
+        val scan = pendingNaviScan
+        if (scan != null && packageName != scan.scanPackage) {
+            cancelPendingNaviScan(reason = "foreground_changed_to:$packageName")
+        }
+
         // grace 기간 중 배달앱의 빈 텍스트 이벤트(쿠팡 flicker)는 lastForeground 업데이트 생략
         // → runnable이 이전 내비 패키지를 기억한 채 재개 처리할 수 있음
         val isGraceFlicker = packageName in AppConstants.DELIVERY_PACKAGES &&
@@ -117,8 +133,14 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun handleNavigationForeground(packageName: String, now: Long) {
+    private fun handleNavigationForeground(packageName: String, previousPackage: String, now: Long) {
         if (packageName !in AppConstants.NAVIGATION_PACKAGES) return
+
+        // 배달앱에서 직접 열린 내비가 선택된 내비와 다르면 리다이렉트
+        if (previousPackage in AppConstants.DELIVERY_PACKAGES) {
+            redirectToSelectedNaviIfNeeded(packageName, previousPackage)
+        }
+
         if (!AppPrefs.isTargetActive(this)) return
 
         navigationTakeoverUntil = now + AppConstants.NAVIGATION_TAKEOVER_MS
@@ -130,6 +152,70 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             "package" to packageName,
             "takeoverUntilMs" to navigationTakeoverUntil
         )
+    }
+
+    private fun redirectToSelectedNaviIfNeeded(currentNaviPackage: String, fromPackage: String) {
+        val selectedNavi = AppPrefs.selectedNavi(this)
+        val expectedPkg = AppConstants.naviPackageOf(selectedNavi)
+        if (currentNaviPackage == expectedPkg) return
+
+        val destText = AppPrefs.lastDeliveryDestinationText(this)
+        val destAt = AppPrefs.lastDeliveryDestinationAt(this)
+        val cacheAgeMs = SystemClock.elapsedRealtime() - destAt
+
+        NotificationLogWriter.appendDebugEvent(
+            this,
+            "navi_redirect_check",
+            "currentNavi" to currentNaviPackage,
+            "expectedPkg" to expectedPkg,
+            "selectedNavi" to selectedNavi,
+            "hasDestText" to destText.isNotBlank(),
+            "cacheAgeMs" to cacheAgeMs
+        )
+
+        val skipReason = when {
+            destText.isBlank() -> "no_dest_cache"
+            cacheAgeMs > AppConstants.DELIVERY_DEST_CACHE_EXPIRY_MS -> "cache_expired"
+            isUiNoise(destText) -> "dest_is_noise"
+            else -> null
+        }
+        if (skipReason != null) {
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navi_redirect_skipped",
+                "reason" to skipReason,
+                "fromPackage" to fromPackage
+            )
+            // 쿠팡이 직접 실행한 네비 화면에서 목적지 텍스트 스캔 시도
+            if (fromPackage == AppConstants.PKG_COUPANG_EATS) {
+                schedulePendingNaviScan(currentNaviPackage, expectedPkg, selectedNavi)
+            }
+            return
+        }
+
+        NotificationLogWriter.appendDebugEvent(
+            this,
+            "navi_redirect_triggered",
+            "from" to currentNaviPackage,
+            "expectedPkg" to expectedPkg,
+            "destText" to destText,
+            "fromPackage" to fromPackage
+        )
+
+        try {
+            val intent = Intent(this, NavigationRedirectActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                data = Uri.parse("delivery://navi-redirect")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navi_redirect_failed",
+                "error" to "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
     }
 
     private fun handleDeliveryForeground(packageName: String, now: Long): Boolean {
@@ -147,6 +233,7 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         }
 
         captureDeliveryDestination()
+        cancelPendingNaviScan(reason = "delivery_foreground")
         cancelPendingResume()
 
         if (now < navigationTakeoverUntil) {
@@ -158,6 +245,19 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
                 "remainingMs" to (navigationTakeoverUntil - now)
             )
             return true
+        }
+
+        // contentIntent.send() 이후 실제 포그라운드 진입 여부 및 지연 시간 확인
+        val autoOpenSentAt = AppPrefs.lastAutoOpenSentAt(this, packageName)
+        if (autoOpenSentAt > 0L) {
+            val elapsedMs = now - autoOpenSentAt
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "delivery_app_foreground_confirmed",
+                "package" to packageName,
+                "elapsedMs" to elapsedMs
+            )
+            AppPrefs.clearAutoOpenSentAt(this, packageName)
         }
 
         AppPrefs.setNavSessionActive(this, false)
@@ -172,8 +272,9 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
                     "package" to packageName,
                     "reason" to "delivery_foreground"
                 )
-            } else if (AppPrefs.isAutoPaused(this)) {
-                // 음악이 재생 중이 아닌데 autoPaused=true → stale 플래그 초기화
+            } else if (AppPrefs.isAutoPaused(this) && !MusicSessionHelper.isYoutubeMusicPaused(this)) {
+                // 음악이 PAUSED 상태가 아닌데 autoPaused=true → stale 플래그 초기화
+                // STATE_PAUSED는 우리가 일시정지한 정상 상태이므로 stale로 판단하지 않음
                 AppPrefs.setAutoPaused(this, false)
                 NotificationLogWriter.appendDebugEvent(
                     this,
@@ -286,7 +387,16 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             "\uC218\uB839 \uAC74\uC218", // 수령 건수
             "\u27A1",               // ➔ 화살표 기호
             "➔",
-            "→"
+            "→",
+            // 쿠팡이츠 배달파트너 특유 노이즈
+            "리워드 프로그램",
+            "도착시간 임박",
+            "보험에 가입",
+            "순서변경불가",
+            "운행시작",
+            "탭 ",              // "탭 N개 중 N번째" 패턴
+            "배달 파트너",
+            "대기배달"
         ).any { token -> line.contains(token) }
         return koreanNoise
     }
@@ -324,6 +434,140 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             MusicSessionHelper.resumeYoutubeMusicIfAutoPaused(this)
         }
         handler.postDelayed(pendingResumeRunnable!!, delayMs)
+    }
+
+    private fun schedulePendingNaviScan(scanPackage: String, expectedPkg: String, selectedNavi: String) {
+        cancelPendingNaviScan()
+        val scan = PendingNaviScan(scanPackage, expectedPkg, selectedNavi, SystemClock.elapsedRealtime())
+        pendingNaviScan = scan
+        pendingNaviScanRunnable = Runnable { executePendingNaviScan() }
+        handler.postDelayed(pendingNaviScanRunnable!!, AppConstants.NAVI_DEST_SCAN_DELAY_MS)
+        NotificationLogWriter.appendDebugEvent(
+            this, "navi_dest_scan_scheduled",
+            "scanPackage" to scanPackage,
+            "expectedPkg" to expectedPkg,
+            "selectedNavi" to selectedNavi
+        )
+    }
+
+    private fun executePendingNaviScan() {
+        val scan = pendingNaviScan ?: return
+
+        val elapsedMs = SystemClock.elapsedRealtime() - scan.startedAt
+        if (elapsedMs > AppConstants.NAVI_DEST_SCAN_TIMEOUT_MS) {
+            NotificationLogWriter.appendDebugEvent(
+                this, "navi_dest_scan_timeout",
+                "scanPackage" to scan.scanPackage,
+                "elapsedMs" to elapsedMs
+            )
+            pendingNaviScan = null
+            pendingNaviScanRunnable = null
+            return
+        }
+
+        val currentPackage = AppPrefs.lastForegroundPackage(this)
+        if (currentPackage != scan.scanPackage) {
+            NotificationLogWriter.appendDebugEvent(
+                this, "navi_dest_scan_cancelled",
+                "reason" to "foreground_changed",
+                "currentPackage" to currentPackage
+            )
+            pendingNaviScan = null
+            pendingNaviScanRunnable = null
+            return
+        }
+
+        val root = rootInActiveWindow
+        if (root == null) {
+            pendingNaviScanRunnable = Runnable { executePendingNaviScan() }
+            handler.postDelayed(pendingNaviScanRunnable!!, AppConstants.NAVI_DEST_SCAN_INTERVAL_MS)
+            return
+        }
+
+        val candidates = mutableListOf<String>()
+        collectNodeText(root, candidates, 0)
+        val destText = pickNaviScreenDest(candidates)
+
+        NotificationLogWriter.appendDebugEvent(
+            this, "navi_dest_scan_attempt",
+            "scanPackage" to scan.scanPackage,
+            "elapsedMs" to elapsedMs,
+            "candidateCount" to candidates.size,
+            "found" to (destText != null),
+            "destText" to (destText ?: "")
+        )
+
+        if (destText != null) {
+            pendingNaviScan = null
+            pendingNaviScanRunnable = null
+            AppPrefs.setLastDeliveryDestinationText(this, destText)
+            AppPrefs.setLastDeliveryDestinationAt(this, SystemClock.elapsedRealtime())
+            try {
+                val intent = Intent(this, NavigationRedirectActivity::class.java).apply {
+                    action = Intent.ACTION_VIEW
+                    data = Uri.parse("delivery://navi-redirect")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+                startActivity(intent)
+                NotificationLogWriter.appendDebugEvent(
+                    this, "navi_redirect_after_scan",
+                    "scanPackage" to scan.scanPackage,
+                    "expectedPkg" to scan.expectedPkg,
+                    "destText" to destText
+                )
+            } catch (e: Exception) {
+                NotificationLogWriter.appendDebugEvent(
+                    this, "navi_redirect_after_scan_failed",
+                    "error" to "${e.javaClass.simpleName}: ${e.message}"
+                )
+            }
+        } else {
+            pendingNaviScanRunnable = Runnable { executePendingNaviScan() }
+            handler.postDelayed(pendingNaviScanRunnable!!, AppConstants.NAVI_DEST_SCAN_INTERVAL_MS)
+        }
+    }
+
+    // 네비 앱 화면(TMAP 등)에서 목적지 주소 텍스트 추출
+    // 배달앱 목적지 캡처와 달리, 네비 앱 UI 노이즈를 별도로 처리
+    private fun pickNaviScreenDest(candidates: List<String>): String? {
+        val cleaned = candidates
+            .map { it.replace(Regex("\\s+"), " ").trim() }
+            .filter { it.length in AppConstants.DEST_TEXT_MIN_LEN..AppConstants.DEST_TEXT_MAX_LEN }
+            .distinct()
+            .filterNot { isNaviScreenNoise(it) }
+
+        // 명시적 목적지 키워드가 있는 라인 우선
+        cleaned.firstOrNull { containsKeyword(it) }?.let { return it }
+        // 주소 패턴이 있는 라인
+        return cleaned.firstOrNull { looksLikeAddress(it) }
+    }
+
+    private fun isNaviScreenNoise(line: String): Boolean {
+        // 네비 앱 공통 UI 문구 — 실제 주소/목적지가 아닌 상태/메뉴 텍스트
+        val naviNoise = listOf(
+            "TMAP", "카카오", "네이버", "경로", "km", "출발지", "최적", "일반", "고속", "무료",
+            "안내 시작", "경로 탐색", "교통 정보", "현재 위치", "내 위치",
+            "애플리케이션 아이콘", "설정", "검색", "즐겨찾기", "홈", "직장"
+        ).any { token -> line.contains(token, ignoreCase = true) }
+        if (naviNoise) return true
+
+        // 숫자+단위 패턴 (거리/시간 표시) — 주소와 혼동 방지
+        if (line.matches(Regex(".*\\d+\\s*[kmKM분시].*")) &&
+            !looksLikeAddress(line)) return true
+
+        return false
+    }
+
+    private fun cancelPendingNaviScan(reason: String = "") {
+        val wasActive = pendingNaviScan != null
+        pendingNaviScanRunnable?.let { handler.removeCallbacks(it) }
+        pendingNaviScanRunnable = null
+        pendingNaviScan = null
+        if (wasActive && reason.isNotBlank()) {
+            NotificationLogWriter.appendDebugEvent(
+                this, "navi_dest_scan_cancelled", "reason" to reason
+            )
+        }
     }
 
     private fun cancelPendingResume() {

@@ -134,7 +134,7 @@ class MusicNotificationListener : NotificationListenerService() {
 
     private fun openDeliveryApp(sbn: StatusBarNotification) {
         val now = SystemClock.elapsedRealtime()
-        val previous = lastAutoOpenAt[sbn.packageName] ?: 0L
+        val previous = lastAutoOpenAt[sbn.key] ?: 0L
         if (now - previous < AppConstants.DELIVERY_AUTO_OPEN_DEDUPE_MS) {
             NotificationLogWriter.appendDebugEvent(
                 this,
@@ -145,7 +145,7 @@ class MusicNotificationListener : NotificationListenerService() {
             )
             return
         }
-        lastAutoOpenAt[sbn.packageName] = now
+        lastAutoOpenAt[sbn.key] = now
 
         NotificationLogWriter.appendDebugEvent(
             this,
@@ -167,6 +167,7 @@ class MusicNotificationListener : NotificationListenerService() {
                 )
             } else {
                 contentIntent.send()
+                AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, now)
                 NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
                 NotificationLogWriter.appendDebugEvent(
                     this,

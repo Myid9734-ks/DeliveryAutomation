@@ -216,7 +216,13 @@ class NavigationRedirectActivity : Activity() {
 
         val target = when (selected) {
             AppConstants.NAVI_KAKAONAVI -> if (lat != null && lon != null) {
-                Uri.parse("kakaonavi://navigate?name=$defaultName&x=$lon&y=$lat&coord_type=wgs84")
+                val appkey = AppConstants.KAKAONAVI_APP_KEY
+                if (appkey.isNotBlank()) {
+                    Uri.parse("kakaonavi://navigate?name=$defaultName&x=$lon&y=$lat&coord_type=wgs84&appkey=$appkey")
+                } else {
+                    // appkey 없을 때 geo: URI로 시도 — 카카오내비가 geo: 스킴을 처리하면 앱키 검증 없이 실행
+                    Uri.parse("geo:$lat,$lon?q=$lat,$lon($defaultName)")
+                }
             } else {
                 Toast.makeText(this, "카카오내비는 좌표가 필요합니다.", Toast.LENGTH_SHORT).show()
                 return

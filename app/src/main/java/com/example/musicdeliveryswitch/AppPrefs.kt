@@ -21,6 +21,7 @@ object AppPrefs {
     private const val KEY_LAST_FOREGROUND_PACKAGE = "last_foreground_package"
     private const val KEY_LAST_DELIVERY_DESTINATION_TEXT = "last_delivery_destination_text"
     private const val KEY_LAST_DELIVERY_DESTINATION_AT = "last_delivery_destination_at"
+    private const val KEY_LAST_AUTO_OPEN_SENT_AT_PREFIX = "last_auto_open_sent_at_"
 
     private fun prefs(context: Context) = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -83,4 +84,13 @@ object AppPrefs {
     fun lastDeliveryDestinationAt(context: Context): Long = prefs(context).getLong(KEY_LAST_DELIVERY_DESTINATION_AT, 0L)
 
     fun setLastDeliveryDestinationAt(context: Context, value: Long) = prefs(context).edit().putLong(KEY_LAST_DELIVERY_DESTINATION_AT, value).apply()
+
+    fun lastAutoOpenSentAt(context: Context, packageName: String): Long =
+        prefs(context).getLong(KEY_LAST_AUTO_OPEN_SENT_AT_PREFIX + packageName, 0L)
+
+    fun setLastAutoOpenSentAt(context: Context, packageName: String, value: Long) =
+        prefs(context).edit().putLong(KEY_LAST_AUTO_OPEN_SENT_AT_PREFIX + packageName, value).apply()
+
+    fun clearAutoOpenSentAt(context: Context, packageName: String) =
+        prefs(context).edit().remove(KEY_LAST_AUTO_OPEN_SENT_AT_PREFIX + packageName).apply()
 }

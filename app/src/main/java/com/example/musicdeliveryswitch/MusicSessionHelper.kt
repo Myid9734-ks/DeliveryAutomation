@@ -29,6 +29,10 @@ object MusicSessionHelper {
         return youtubeController(context)?.playbackState?.state == PlaybackState.STATE_PLAYING
     }
 
+    fun isYoutubeMusicPaused(context: Context): Boolean {
+        return youtubeController(context)?.playbackState?.state == PlaybackState.STATE_PAUSED
+    }
+
     fun pauseYoutubeMusic(context: Context): Boolean {
         val controller = youtubeController(context) ?: return false
         val state = controller.playbackState?.state

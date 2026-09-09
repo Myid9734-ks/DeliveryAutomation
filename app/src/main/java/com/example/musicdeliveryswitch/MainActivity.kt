@@ -2,7 +2,9 @@ package com.example.musicdeliveryswitch
 
 import android.content.ComponentName
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.appcompat.app.AppCompatActivity
 import com.example.musicdeliveryswitch.databinding.ActivityMainBinding
@@ -11,6 +13,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var accessibilityOpened = false
     private var notificationOpened = false
+    private var batteryOpened = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -112,6 +115,18 @@ class MainActivity : AppCompatActivity() {
             )
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
+
+        binding.buttonBatteryOptimization.setOnClickListener {
+            batteryOpened = true
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "settings_button_clicked",
+                "target" to "battery_optimization"
+            )
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            })
+        }
     }
 
     override fun onResume() {
@@ -163,11 +178,28 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        if (!batteryOK()) {
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "permission_check_failed",
+                "permission" to "battery_optimization",
+                "action" to "open_settings"
+            )
+            if (!batteryOpened) {
+                batteryOpened = true
+                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                })
+            }
+            return
+        }
+
         NotificationLogWriter.appendDebugEvent(
             this,
             "permission_check_ok",
             "accessibility" to access(),
-            "notification_listener" to notifyOK()
+            "notification_listener" to notifyOK(),
+            "battery_optimization" to batteryOK()
         )
     }
 
@@ -183,7 +215,8 @@ class MainActivity : AppCompatActivity() {
             append("Order auto open: ${if (AppPrefs.isOrderAutoOpenEnabled(this@MainActivity)) "ON" else "OFF"}\n")
             append("Music: ${if (AppPrefs.isMusicEnabled(this@MainActivity)) "ON" else "OFF"}\n")
             append("Accessibility: ${if (access()) "GRANTED" else "NEEDED"}\n")
-            append("Notification access: ${if (notifyOK()) "GRANTED" else "NEEDED"}")
+            append("Notification access: ${if (notifyOK()) "GRANTED" else "NEEDED"}\n")
+            append("Battery optimization: ${if (batteryOK()) "EXCLUDED" else "NEEDED"}")
         }
         NotificationLogWriter.appendDebugEvent(
             this,
@@ -210,5 +243,10 @@ class MainActivity : AppCompatActivity() {
         val e = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
         val q = ComponentName(this, MusicNotificationListener::class.java).flattenToString()
         return e.split(':').any { it.equals(q, true) }
+    }
+
+    private fun batteryOK(): Boolean {
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        return pm.isIgnoringBatteryOptimizations(packageName)
     }
 }

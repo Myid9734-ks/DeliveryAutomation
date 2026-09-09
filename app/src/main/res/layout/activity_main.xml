@@ -245,6 +245,17 @@
             android:textSize="15sp"
             app:cornerRadius="16dp" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonBatteryOptimization"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:layout_marginTop="10dp"
+            android:text="3. 배터리 최적화 제외 설정"
+            android:textAllCaps="false"
+            android:textSize="15sp"
+            app:cornerRadius="16dp" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

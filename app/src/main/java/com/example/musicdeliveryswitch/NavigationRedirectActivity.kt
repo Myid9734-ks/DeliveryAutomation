@@ -1,6 +1,7 @@
 package com.example.musicdeliveryswitch
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -20,6 +21,7 @@ class NavigationRedirectActivity : Activity() {
 
     private fun handle(i: Intent?) {
         val selected = AppPrefs.selectedNavi(this)
+        val redirectFromPkg = i?.getStringExtra(AppConstants.EXTRA_REDIRECT_FROM_PKG).orEmpty()
         NotificationLogWriter.appendNavigationIntent(this, i, selected, result = "received")
         NotificationLogWriter.appendDebugEvent(
             this,
@@ -95,7 +97,7 @@ class NavigationRedirectActivity : Activity() {
                 "lon" to coords.second,
                 "query" to query
             )
-            launchNavigation(coords.first, coords.second, query)
+            launchNavigation(coords.first, coords.second, query, redirectFromPkg)
         } else {
             NotificationLogWriter.appendNavigationIntent(this, i, selected, result = "query_fallback:$query")
             NotificationLogWriter.appendDebugEvent(
@@ -104,7 +106,7 @@ class NavigationRedirectActivity : Activity() {
                 "mode" to "query",
                 "query" to query
             )
-            launchNavigation(null, null, query)
+            launchNavigation(null, null, query, redirectFromPkg)
         }
 
         finish()
@@ -161,6 +163,22 @@ class NavigationRedirectActivity : Activity() {
         }
     }
 
+    private fun killNavApp(packageName: String) {
+        try {
+            val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+            am.killBackgroundProcesses(packageName)
+            NotificationLogWriter.appendDebugEvent(
+                this, "navi_killed_after_redirect", "package" to packageName
+            )
+        } catch (e: Exception) {
+            NotificationLogWriter.appendDebugEvent(
+                this, "navi_kill_failed",
+                "package" to packageName,
+                "error" to "${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
+    }
+
     private fun dest(u: Uri): Pair<String, String>? {
         // kakaonavi-sdk://navigate?param={"destination":{"x":lon,"y":lat},...}
         if (u.scheme == "kakaonavi-sdk") {
@@ -209,7 +227,7 @@ class NavigationRedirectActivity : Activity() {
         return null
     }
 
-    private fun launchNavigation(lat: String?, lon: String?, query: String? = null) {
+    private fun launchNavigation(lat: String?, lon: String?, query: String? = null, redirectFromPkg: String = "") {
         val defaultName = Uri.encode("delivery")
         val searchName = Uri.encode(query ?: "delivery")
         val selected = AppPrefs.selectedNavi(this)
@@ -272,6 +290,12 @@ class NavigationRedirectActivity : Activity() {
             })
             AppPrefs.setLastDeliveryDestinationText(this, "")
             AppPrefs.setLastDeliveryDestinationAt(this, 0L)
+
+            // 리다이렉트 성공: 기존에 실행됐던 네비 앱 종료
+            if (redirectFromPkg.isNotBlank()) {
+                killNavApp(redirectFromPkg)
+            }
+
             NotificationLogWriter.appendNavigationIntent(
                 this,
                 Intent(Intent.ACTION_VIEW, target).apply { setPackage(targetPackage) },
@@ -285,7 +309,8 @@ class NavigationRedirectActivity : Activity() {
                 "navigation_launch_result",
                 "result" to "ok",
                 "selectedNavi" to selected,
-                "targetPackage" to targetPackage
+                "targetPackage" to targetPackage,
+                "redirectFromPkg" to redirectFromPkg
             )
         } catch (_: ActivityNotFoundException) {
             NotificationLogWriter.appendNavigationIntent(this, null, selected, lat, lon, "selected_nav_missing")

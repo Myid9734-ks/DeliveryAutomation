@@ -206,6 +206,7 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             val intent = Intent(this, NavigationRedirectActivity::class.java).apply {
                 action = Intent.ACTION_VIEW
                 data = Uri.parse("delivery://navi-redirect")
+                putExtra(AppConstants.EXTRA_REDIRECT_FROM_PKG, currentNaviPackage)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             startActivity(intent)
@@ -255,7 +256,8 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
                 this,
                 "delivery_app_foreground_confirmed",
                 "package" to packageName,
-                "elapsedMs" to elapsedMs
+                "elapsedMs" to elapsedMs,
+                "slow" to (elapsedMs > 2000L)
             )
             AppPrefs.clearAutoOpenSentAt(this, packageName)
         }
@@ -506,6 +508,7 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
                 val intent = Intent(this, NavigationRedirectActivity::class.java).apply {
                     action = Intent.ACTION_VIEW
                     data = Uri.parse("delivery://navi-redirect")
+                    putExtra(AppConstants.EXTRA_REDIRECT_FROM_PKG, scan.scanPackage)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
                 startActivity(intent)
@@ -576,7 +579,7 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         pendingResumePackage = null
     }
 
-    // 이벤트가 실제 포그라운드(활성) 윈도우에서 온 것인지 확인
+// 이벤트가 실제 포그라운드(활성) 윈도우에서 온 것인지 확인
     // 내비 앱만 선별 필터링:
     //   - 창이 활성 상태면 항상 통과
     //   - 창이 비활성이고 직전 포그라운드가 배달앱이면 오버레이로 판단 → 무시

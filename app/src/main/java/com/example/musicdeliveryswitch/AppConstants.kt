@@ -57,6 +57,9 @@ object AppConstants {
     const val NAVI_DEST_SCAN_INTERVAL_MS = 1000L   // 재시도 간격
     const val NAVI_DEST_SCAN_TIMEOUT_MS = 10_000L  // 최대 스캔 시간
 
+    // Intent extra: 리다이렉트 전 실행 중이던 네비 패키지 (종료 대상)
+    const val EXTRA_REDIRECT_FROM_PKG = "redirect_from_pkg"
+
     // System packages (resume scheduling special cases)
     val SYSTEM_DIALOG_PACKAGES = setOf(
         "com.google.android.packageinstaller",

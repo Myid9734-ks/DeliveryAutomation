@@ -117,15 +117,35 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.buttonBatteryOptimization.setOnClickListener {
-            batteryOpened = true
             NotificationLogWriter.appendDebugEvent(
                 this,
                 "settings_button_clicked",
                 "target" to "battery_optimization"
             )
-            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                data = Uri.parse("package:$packageName")
-            })
+            try {
+                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                })
+                batteryOpened = true
+            } catch (e: Exception) {
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "settings_open_failed",
+                    "target" to "battery_optimization",
+                    "error" to (e.message ?: "unknown")
+                )
+                try {
+                    startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    batteryOpened = true
+                } catch (e2: Exception) {
+                    NotificationLogWriter.appendDebugEvent(
+                        this,
+                        "settings_open_failed_fallback",
+                        "target" to "battery_optimization",
+                        "error" to (e2.message ?: "unknown")
+                    )
+                }
+            }
         }
     }
 
@@ -186,10 +206,20 @@ class MainActivity : AppCompatActivity() {
                 "action" to "open_settings"
             )
             if (!batteryOpened) {
-                batteryOpened = true
-                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:$packageName")
-                })
+                try {
+                    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    })
+                    batteryOpened = true
+                } catch (e: Exception) {
+                    NotificationLogWriter.appendDebugEvent(
+                        this,
+                        "settings_open_failed",
+                        "target" to "battery_optimization_auto",
+                        "error" to (e.message ?: "unknown")
+                    )
+                    batteryOpened = true
+                }
             }
             return
         }

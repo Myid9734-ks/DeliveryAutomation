@@ -398,7 +398,10 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             "운행시작",
             "탭 ",              // "탭 N개 중 N번째" 패턴
             "배달 파트너",
-            "대기배달"
+            "대기배달",
+            // 지도/검색 버튼 텍스트 — "지도앱으로 검색하기" 등 UI 문구
+            "검색하기",
+            "지도앱"
         ).any { token -> line.contains(token) }
         return koreanNoise
     }

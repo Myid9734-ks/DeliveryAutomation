@@ -24,13 +24,9 @@ class MusicNotificationListener : NotificationListenerService() {
     private var attachRetryScheduled = false
     private var attachRetryCount = 0
 
-    private val autoOpenTimeoutHandler = Handler(Looper.getMainLooper())
-    private var autoOpenTimeoutRunnable: Runnable? = null
-
     companion object {
         private const val ATTACH_RETRY_MAX = 6
         private const val ATTACH_RETRY_DELAY_MS = 350L
-        private const val AUTO_OPEN_TIMEOUT_MS = 2500L  // contentIntent 후 앱 미진입 시 launchIntent 재시도
     }
 
     private val callback = object : MediaController.Callback() {
@@ -73,8 +69,6 @@ class MusicNotificationListener : NotificationListenerService() {
         attachRetryHandler.removeCallbacksAndMessages(null)
         attachRetryScheduled = false
         attachRetryCount = 0
-        autoOpenTimeoutRunnable?.let { autoOpenTimeoutHandler.removeCallbacks(it) }
-        autoOpenTimeoutRunnable = null
         super.onListenerDisconnected()
     }
 
@@ -156,119 +150,24 @@ class MusicNotificationListener : NotificationListenerService() {
         }
         lastAutoOpenAt[sbn.key] = now
 
+        val contentIntent = sbn.notification.contentIntent
+        val launchIntent = packageManager.getLaunchIntentForPackage(sbn.packageName)
+
         NotificationLogWriter.appendDebugEvent(
             this,
             "delivery_app_open_attempt",
             "package" to sbn.packageName,
-            "hasContentIntent" to (sbn.notification.contentIntent != null),
-            "hasLaunchIntent" to (packageManager.getLaunchIntentForPackage(sbn.packageName) != null)
+            "hasContentIntent" to (contentIntent != null),
+            "hasLaunchIntent" to (launchIntent != null)
         )
 
-        try {
-            val contentIntent = sbn.notification.contentIntent
-            if (contentIntent == null) {
-                NotificationLogWriter.appendDebugEvent(
-                    this,
-                    "delivery_app_open_fallback",
-                    "package" to sbn.packageName,
-                    "from" to "contentIntent",
-                    "reason" to "missing"
-                )
-            } else {
-                NotificationLogWriter.appendDebugEvent(
-                    this,
-                    "content_intent_info",
-                    "package" to sbn.packageName,
-                    "creatorPackage" to contentIntent.creatorPackage,
-                    "creatorUid" to contentIntent.creatorUid
-                )
-                val sendStart = SystemClock.elapsedRealtime()
-                contentIntent.send()
-                val sendElapsedMs = SystemClock.elapsedRealtime() - sendStart
+        // 1단계: launchIntent로 즉시 포그라운드 전환
+        // FLAG_ACTIVITY_REORDER_TO_FRONT: 이미 실행 중이면 기존 액티비티를 앞으로 → 콜드스타트 없음
+        if (launchIntent != null) {
+            try {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                startActivity(launchIntent)
                 AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, now)
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
-                NotificationLogWriter.appendDebugEvent(
-                    this,
-                    "delivery_app_switch_result",
-                    "package" to sbn.packageName,
-                    "method" to "contentIntent",
-                    "result" to "success",
-                    "sendElapsedMs" to sendElapsedMs
-                )
-
-                // contentIntent 실행 후 앱이 실제로 포그라운드에 안 뜨면 launchIntent 로 재시도
-                autoOpenTimeoutRunnable?.let { autoOpenTimeoutHandler.removeCallbacks(it) }
-                val pkg = sbn.packageName
-                val sentAt = now
-                autoOpenTimeoutRunnable = Runnable {
-                    autoOpenTimeoutRunnable = null
-                    if (AppPrefs.lastAutoOpenSentAt(this, pkg) == 0L) return@Runnable  // 이미 confirmed
-                    val timeoutElapsedMs = SystemClock.elapsedRealtime() - sentAt
-                    NotificationLogWriter.appendDebugEvent(
-                        this,
-                        "auto_open_timeout",
-                        "package" to pkg,
-                        "elapsedMs" to timeoutElapsedMs,
-                        "action" to "fallback_to_launchIntent"
-                    )
-                    try {
-                        val launch = packageManager.getLaunchIntentForPackage(pkg)
-                        if (launch != null) {
-                            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                            startActivity(launch)
-                            NotificationLogWriter.appendDebugEvent(
-                                this,
-                                "auto_open_timeout_fallback",
-                                "package" to pkg,
-                                "method" to "launchIntent",
-                                "result" to "sent"
-                            )
-                        } else {
-                            NotificationLogWriter.appendDebugEvent(
-                                this,
-                                "auto_open_timeout_fallback",
-                                "package" to pkg,
-                                "method" to "launchIntent",
-                                "result" to "missing_intent"
-                            )
-                        }
-                    } catch (e: Exception) {
-                        NotificationLogWriter.appendDebugEvent(
-                            this,
-                            "auto_open_timeout_fallback",
-                            "package" to pkg,
-                            "method" to "launchIntent",
-                            "result" to "fail:${e.javaClass.simpleName}"
-                        )
-                    }
-                }
-                autoOpenTimeoutHandler.postDelayed(autoOpenTimeoutRunnable!!, AUTO_OPEN_TIMEOUT_MS)
-                return
-            }
-        } catch (_: PendingIntent.CanceledException) {
-            NotificationLogWriter.appendDebugEvent(
-                this,
-                "delivery_app_open_fallback",
-                "package" to sbn.packageName,
-                "from" to "contentIntent",
-                "reason" to "canceled"
-            )
-        } catch (e: Exception) {
-            NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
-            NotificationLogWriter.appendDebugEvent(
-                this,
-                "delivery_app_open_fallback",
-                "package" to sbn.packageName,
-                "from" to "contentIntent",
-                "reason" to "${e.javaClass.simpleName}: ${e.message}"
-            )
-        }
-
-        try {
-            val launch = packageManager.getLaunchIntentForPackage(sbn.packageName)
-            if (launch != null) {
-                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                startActivity(launch)
                 NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "성공")
                 NotificationLogWriter.appendDebugEvent(
                     this,
@@ -277,26 +176,36 @@ class MusicNotificationListener : NotificationListenerService() {
                     "method" to "launchIntent",
                     "result" to "success"
                 )
-            } else {
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: 실행 Intent 없음")
+            } catch (e: Exception) {
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
                 NotificationLogWriter.appendDebugEvent(
                     this,
                     "delivery_app_switch_result",
                     "package" to sbn.packageName,
                     "method" to "launchIntent",
-                    "result" to "missing_launch_intent"
+                    "result" to "fail",
+                    "error" to "${e.javaClass.simpleName}: ${e.message}"
                 )
             }
-        } catch (e: Exception) {
-            NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
-            NotificationLogWriter.appendDebugEvent(
-                this,
-                "delivery_app_switch_result",
-                "package" to sbn.packageName,
-                "method" to "launchIntent",
-                "result" to "fail",
-                "error" to "${e.javaClass.simpleName}: ${e.message}"
-            )
+        }
+
+        // 2단계: contentIntent로 주문화면 딥링크 (launchIntent 직후 바로 전송)
+        if (contentIntent != null) {
+            try {
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "content_intent_info",
+                    "package" to sbn.packageName,
+                    "creatorPackage" to contentIntent.creatorPackage,
+                    "creatorUid" to contentIntent.creatorUid
+                )
+                contentIntent.send()
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
+            } catch (_: PendingIntent.CanceledException) {
+                // 만료된 intent — 무시, launchIntent가 이미 전송됨
+            } catch (e: Exception) {
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
+            }
         }
     }
 

@@ -18,6 +18,8 @@ class MusicNotificationListener : NotificationListenerService() {
 
     private var controller: MediaController? = null
     private val lastAutoOpenAt = mutableMapOf<String, Long>()
+    // 패키지 단위 중복 방지 — 같은 앱에서 다른 키로 연속 알림 시(배민 FCM 중복 발송 등) 차단
+    private val lastAutoOpenPkgAt = mutableMapOf<String, Long>()
 
     // 컨트롤러 부착 재시도 — YT Music 세션이 늦게 열리는 경우를 대비
     private val attachRetryHandler = Handler(Looper.getMainLooper())
@@ -150,6 +152,20 @@ class MusicNotificationListener : NotificationListenerService() {
         }
         lastAutoOpenAt[sbn.key] = now
 
+        // 패키지 단위 중복 방지 — 동일 앱의 다른 키 알림이 짧은 간격으로 연속 도착할 때 차단
+        val previousPkg = lastAutoOpenPkgAt[sbn.packageName] ?: 0L
+        if (now - previousPkg < AppConstants.DELIVERY_AUTO_OPEN_DEDUPE_MS) {
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "delivery_app_open_skipped",
+                "package" to sbn.packageName,
+                "reason" to "duplicate_suppression_pkg",
+                "elapsedMs" to (now - previousPkg)
+            )
+            return
+        }
+        lastAutoOpenPkgAt[sbn.packageName] = now
+
         val contentIntent = sbn.notification.contentIntent
         val launchIntent = packageManager.getLaunchIntentForPackage(sbn.packageName)
 
@@ -161,52 +177,71 @@ class MusicNotificationListener : NotificationListenerService() {
             "hasLaunchIntent" to (launchIntent != null)
         )
 
-        // 1단계: launchIntent로 즉시 포그라운드 전환
-        // FLAG_ACTIVITY_REORDER_TO_FRONT: 이미 실행 중이면 기존 액티비티를 앞으로 → 콜드스타트 없음
-        if (launchIntent != null) {
-            try {
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                startActivity(launchIntent)
-                AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, now)
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "성공")
-                NotificationLogWriter.appendDebugEvent(
-                    this,
-                    "delivery_app_switch_result",
-                    "package" to sbn.packageName,
-                    "method" to "launchIntent",
-                    "result" to "success"
-                )
-            } catch (e: Exception) {
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
-                NotificationLogWriter.appendDebugEvent(
-                    this,
-                    "delivery_app_switch_result",
-                    "package" to sbn.packageName,
-                    "method" to "launchIntent",
-                    "result" to "fail",
-                    "error" to "${e.javaClass.simpleName}: ${e.message}"
-                )
+        // 알림음이 시작될 시간을 확보하기 위해 launchIntent를 지연 발동
+        // (즉시 포그라운드 전환 시 Android가 해당 앱의 알림음을 억제하는 문제 방지)
+        Handler(Looper.getMainLooper()).postDelayed({
+            // 1단계: launchIntent로 포그라운드 전환
+            // FLAG_ACTIVITY_REORDER_TO_FRONT: 이미 실행 중이면 기존 액티비티를 앞으로 → 콜드스타트 없음
+            if (launchIntent != null) {
+                try {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    startActivity(launchIntent)
+                    AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
+                    NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "성공")
+                    NotificationLogWriter.appendDebugEvent(
+                        this,
+                        "delivery_app_switch_result",
+                        "package" to sbn.packageName,
+                        "method" to "launchIntent",
+                        "result" to "success"
+                    )
+                } catch (e: Exception) {
+                    NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
+                    NotificationLogWriter.appendDebugEvent(
+                        this,
+                        "delivery_app_switch_result",
+                        "package" to sbn.packageName,
+                        "method" to "launchIntent",
+                        "result" to "fail",
+                        "error" to "${e.javaClass.simpleName}: ${e.message}"
+                    )
+                }
             }
-        }
 
-        // 2단계: contentIntent로 주문화면 딥링크 (launchIntent 직후 바로 전송)
-        if (contentIntent != null) {
-            try {
-                NotificationLogWriter.appendDebugEvent(
-                    this,
-                    "content_intent_info",
-                    "package" to sbn.packageName,
-                    "creatorPackage" to contentIntent.creatorPackage,
-                    "creatorUid" to contentIntent.creatorUid
-                )
-                contentIntent.send()
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
-            } catch (_: PendingIntent.CanceledException) {
-                // 만료된 intent — 무시, launchIntent가 이미 전송됨
-            } catch (e: Exception) {
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
+            // 2단계: contentIntent로 주문화면 딥링크
+            // launchIntent 발동 후 CONTENT_INTENT_DELAY_MS 대기 — 이 시간 내에 포그라운드 확인되면 스킵
+            // (이미 앱이 포그라운드 상태면 앱이 자체적으로 주문 화면을 표시하므로 중복 전환 불필요)
+            if (contentIntent != null) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    // lastAutoOpenSentAt이 0이면 ForegroundAppAccessibilityService가 포그라운드 확인 후 이미 클리어한 것
+                    // → 앱이 launchIntent로 정상 열렸으므로 contentIntent 중복 전환 스킵
+                    if (AppPrefs.lastAutoOpenSentAt(this, sbn.packageName) == 0L) {
+                        NotificationLogWriter.appendDebugEvent(
+                            this,
+                            "content_intent_skipped",
+                            "package" to sbn.packageName,
+                            "reason" to "foreground_already_confirmed"
+                        )
+                        return@postDelayed
+                    }
+                    try {
+                        NotificationLogWriter.appendDebugEvent(
+                            this,
+                            "content_intent_info",
+                            "package" to sbn.packageName,
+                            "creatorPackage" to contentIntent.creatorPackage,
+                            "creatorUid" to contentIntent.creatorUid
+                        )
+                        contentIntent.send()
+                        NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
+                    } catch (_: PendingIntent.CanceledException) {
+                        // 만료된 intent — 무시, launchIntent가 이미 전송됨
+                    } catch (e: Exception) {
+                        NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
+                    }
+                }, AppConstants.CONTENT_INTENT_DELAY_MS)
             }
-        }
+        }, AppConstants.LAUNCH_INTENT_DELAY_MS)
     }
 
     private fun attachYoutubeController() {

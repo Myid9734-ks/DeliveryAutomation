@@ -51,6 +51,8 @@ object AppConstants {
     const val NAV_FALLBACK_RATE_LIMIT_MS = 1500L
     const val DELIVERY_DEST_CACHE_EXPIRY_MS = 10 * 60 * 1000L
     const val DELIVERY_AUTO_OPEN_DEDUPE_MS = 2000L
+    const val LAUNCH_INTENT_DELAY_MS = 600L    // 알림음이 시작된 후 앱 전환 (즉시 전환 시 Android가 알림음 억제)
+    const val CONTENT_INTENT_DELAY_MS = 1500L  // launchIntent 발동 후 주문화면 딥링크 (포그라운드 확인 대기)
 
     // 쿠팡 → 잘못된 네비 실행 시, 해당 네비 화면에서 목적지 텍스트 스캔
     const val NAVI_DEST_SCAN_DELAY_MS = 1500L      // 첫 스캔 전 대기 (네비 UI 로딩 대기)

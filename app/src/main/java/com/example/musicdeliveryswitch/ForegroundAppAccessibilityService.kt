@@ -223,14 +223,25 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         if (packageName !in AppConstants.DELIVERY_PACKAGES) return false
 
         if (now < deliveryExitGraceUntil) {
-            NotificationLogWriter.appendDebugEvent(
-                this,
-                "delivery_event_ignored",
-                "package" to packageName,
-                "reason" to "exit_grace",
-                "remainingMs" to (deliveryExitGraceUntil - now)
-            )
-            return true
+            // autoOpen으로 직접 전환 중인 앱이면 exit_grace 면제
+            // (배민 사용 중 쿠팡 신규주문 → 배민 exit_grace 중 쿠팡 포그라운드 이벤트가 무시되는 문제 방지)
+            if (AppPrefs.lastAutoOpenSentAt(this, packageName) > 0L) {
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "exit_grace_bypassed",
+                    "package" to packageName,
+                    "reason" to "auto_open_in_progress"
+                )
+            } else {
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "delivery_event_ignored",
+                    "package" to packageName,
+                    "reason" to "exit_grace",
+                    "remainingMs" to (deliveryExitGraceUntil - now)
+                )
+                return true
+            }
         }
 
         captureDeliveryDestination()

@@ -215,22 +215,10 @@ class MusicNotificationListener : NotificationListenerService() {
                 }
             }
 
-            // 2단계: contentIntent로 주문화면 딥링크
-            // launchIntent 발동 후 CONTENT_INTENT_DELAY_MS 대기 — 이 시간 내에 포그라운드 확인되면 스킵
-            // (이미 앱이 포그라운드 상태면 앱이 자체적으로 주문 화면을 표시하므로 중복 전환 불필요)
+            // 2단계: contentIntent로 주문화면 딥링크 (수락/거절 화면으로 직접 이동)
+            // launchIntent 발동 후 CONTENT_INTENT_DELAY_MS 대기 후 무조건 발동
             if (contentIntent != null) {
                 Handler(Looper.getMainLooper()).postDelayed({
-                    // lastAutoOpenSentAt이 0이면 ForegroundAppAccessibilityService가 포그라운드 확인 후 이미 클리어한 것
-                    // → 앱이 launchIntent로 정상 열렸으므로 contentIntent 중복 전환 스킵
-                    if (AppPrefs.lastAutoOpenSentAt(this, sbn.packageName) == 0L) {
-                        NotificationLogWriter.appendDebugEvent(
-                            this,
-                            "content_intent_skipped",
-                            "package" to sbn.packageName,
-                            "reason" to "foreground_already_confirmed"
-                        )
-                        return@postDelayed
-                    }
                     try {
                         NotificationLogWriter.appendDebugEvent(
                             this,

@@ -16,12 +16,13 @@ import android.service.notification.StatusBarNotification
 
 class MusicNotificationListener : NotificationListenerService() {
 
-    private var controller: MediaController? = null
+    // packageName → MediaController (SUPPORTED_MUSIC_APPS 전체 관리)
+    private val controllers = mutableMapOf<String, MediaController>()
     private val lastAutoOpenAt = mutableMapOf<String, Long>()
     // 패키지 단위 중복 방지 — 같은 앱에서 다른 키로 연속 알림 시(배민 FCM 중복 발송 등) 차단
     private val lastAutoOpenPkgAt = mutableMapOf<String, Long>()
 
-    // 컨트롤러 부착 재시도 — YT Music 세션이 늦게 열리는 경우를 대비
+    // 컨트롤러 부착 재시도 — 음악 앱 세션이 늦게 열리는 경우를 대비
     private val attachRetryHandler = Handler(Looper.getMainLooper())
     private var attachRetryScheduled = false
     private var attachRetryCount = 0
@@ -31,16 +32,19 @@ class MusicNotificationListener : NotificationListenerService() {
         private const val ATTACH_RETRY_DELAY_MS = 350L
     }
 
-    private val callback = object : MediaController.Callback() {
+    /** 앱별 콜백 — 재생 재개 완료 감지 (autoPaused 플래그 초기화) */
+    private fun makeCallback(packageName: String) = object : MediaController.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackState?) {
             NotificationLogWriter.appendAutoOpenResult(
                 this@MusicNotificationListener,
-                MusicSessionHelper.YOUTUBE_MUSIC,
+                packageName,
                 "playback_state_changed",
                 "state=${state?.state ?: -1}, autoPaused=${AppPrefs.isAutoPaused(this@MusicNotificationListener)}, targetActive=${AppPrefs.isTargetActive(this@MusicNotificationListener)}, resumePending=${AppPrefs.isResumePending(this@MusicNotificationListener)}"
             )
             if (state?.state != PlaybackState.STATE_PLAYING) return
             if (!AppPrefs.isAutoPaused(this@MusicNotificationListener)) return
+            // 멈춘 앱과 재생 시작한 앱이 다르면 무시
+            if (AppPrefs.activeMusicPackage(this@MusicNotificationListener) != packageName) return
             // 배달앱이 포그라운드 상태면 방금 pause 요청이 간 것 — resume complete 처리하지 않음
             // (resume + immediate pause 레이스로 autoPaused가 잘못 초기화되는 버그 방지)
             if (AppPrefs.isTargetActive(this@MusicNotificationListener)) return
@@ -49,7 +53,7 @@ class MusicNotificationListener : NotificationListenerService() {
             val elapsed = SystemClock.elapsedRealtime() - if (resumeAt > 0L) resumeAt else AppPrefs.autoPauseAt(this@MusicNotificationListener)
             NotificationLogWriter.appendAutoOpenResult(
                 this@MusicNotificationListener,
-                MusicSessionHelper.YOUTUBE_MUSIC,
+                packageName,
                 "auto_resume_complete",
                 "playing_after=${elapsed}ms"
             )
@@ -57,17 +61,20 @@ class MusicNotificationListener : NotificationListenerService() {
             AppPrefs.setAutoPauseAt(this@MusicNotificationListener, 0L)
             AppPrefs.setResumePending(this@MusicNotificationListener, false)
             AppPrefs.setResumeRequestedAt(this@MusicNotificationListener, 0L)
+            AppPrefs.clearActiveMusicPackage(this@MusicNotificationListener)
         }
     }
 
+    // packageName → 등록된 Callback 인스턴스 (unregister 시 동일 객체 필요)
+    private val registeredCallbacks = mutableMapOf<String, MediaController.Callback>()
+
     override fun onListenerConnected() {
         super.onListenerConnected()
-        attachYoutubeController()
+        attachMusicControllers()
     }
 
     override fun onListenerDisconnected() {
-        controller?.unregisterCallback(callback)
-        controller = null
+        detachAllControllers()
         attachRetryHandler.removeCallbacksAndMessages(null)
         attachRetryScheduled = false
         attachRetryCount = 0
@@ -108,11 +115,11 @@ class MusicNotificationListener : NotificationListenerService() {
             }
         }
 
-        if (sbn.packageName == MusicSessionHelper.YOUTUBE_MUSIC) attachYoutubeController()
+        if (sbn.packageName in AppConstants.SUPPORTED_MUSIC_APPS) attachMusicControllers()
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        if (sbn?.packageName == MusicSessionHelper.YOUTUBE_MUSIC) attachYoutubeController()
+        if (sbn?.packageName in AppConstants.SUPPORTED_MUSIC_APPS) attachMusicControllers()
     }
 
     private fun isNewOrderNotification(sbn: StatusBarNotification): Boolean {
@@ -244,60 +251,77 @@ class MusicNotificationListener : NotificationListenerService() {
         }, AppConstants.LAUNCH_INTENT_DELAY_MS)
     }
 
-    private fun attachYoutubeController() {
+    /** SUPPORTED_MUSIC_APPS 전체의 MediaController를 최신 세션으로 갱신 */
+    private fun attachMusicControllers() {
         try {
             val manager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
             val component = ComponentName(this, MusicNotificationListener::class.java)
-            val newController = manager.getActiveSessions(component)
-                .firstOrNull { it.packageName == MusicSessionHelper.YOUTUBE_MUSIC }
+            val activeSessions = manager.getActiveSessions(component)
+                .filter { it.packageName in AppConstants.SUPPORTED_MUSIC_APPS }
+                .associateBy { it.packageName }
 
-            if (controller?.sessionToken == newController?.sessionToken) return
+            // 새로 연결되거나 세션 토큰이 바뀐 앱만 갱신
+            for (pkg in AppConstants.SUPPORTED_MUSIC_APPS) {
+                val newCtrl = activeSessions[pkg]
+                val oldCtrl = controllers[pkg]
 
-            controller?.unregisterCallback(callback)
-            controller = newController
-            controller?.registerCallback(callback)
+                if (oldCtrl?.sessionToken == newCtrl?.sessionToken) continue
 
-            NotificationLogWriter.appendAutoOpenResult(
-                this,
-                MusicSessionHelper.YOUTUBE_MUSIC,
-                "controller_attach",
-                if (controller == null) "none" else "attached"
-            )
-            NotificationLogWriter.appendDebugEvent(
-                this,
-                "youtube_controller_state",
-                "result" to if (controller == null) "none" else "attached",
-                "retryCount" to attachRetryCount
-            )
+                // 기존 콜백 해제
+                oldCtrl?.let { registeredCallbacks[pkg]?.let(it::unregisterCallback) }
 
-            if (controller != null) {
+                if (newCtrl != null) {
+                    val cb = makeCallback(pkg)
+                    newCtrl.registerCallback(cb)
+                    controllers[pkg] = newCtrl
+                    registeredCallbacks[pkg] = cb
+                } else {
+                    controllers.remove(pkg)
+                    registeredCallbacks.remove(pkg)
+                }
+
+                NotificationLogWriter.appendDebugEvent(
+                    this, "music_controller_state",
+                    "package" to pkg,
+                    "result" to if (newCtrl != null) "attached" else "none",
+                    "retryCount" to attachRetryCount
+                )
+            }
+
+            // autoPaused 앱의 컨트롤러가 붙었으면 재개 시도
+            val targetPkg = AppPrefs.activeMusicPackage(this).ifBlank { MusicSessionHelper.YOUTUBE_MUSIC }
+            if (controllers.containsKey(targetPkg)) {
                 attachRetryHandler.removeCallbacksAndMessages(null)
                 attachRetryScheduled = false
                 attachRetryCount = 0
-                // 컨트롤러가 연결됐고 재개 대기 중이면 즉시 재개 시도
                 if (AppPrefs.isAutoPaused(this) &&
                     (AppPrefs.isResumePending(this) || !AppPrefs.isTargetActive(this))) {
                     NotificationLogWriter.appendDebugEvent(
-                        this,
-                        "youtube_controller_resume_trigger",
+                        this, "music_controller_resume_trigger",
+                        "package" to targetPkg,
                         "reason" to "controller_attached",
                         "retryCount" to AppPrefs.resumeRetryCount(this)
                     )
-                    MusicSessionHelper.resumeYoutubeMusicIfAutoPaused(this)
+                    MusicSessionHelper.resumeIfAutoPaused(this)
                 }
             } else if (shouldRetryControllerAttach()) {
                 scheduleControllerAttachRetry("attach_none")
             }
         } catch (_: SecurityException) {
-            controller = null
-            NotificationLogWriter.appendAutoOpenResult(
-                this, MusicSessionHelper.YOUTUBE_MUSIC, "controller_attach", "security_exception"
-            )
+            detachAllControllers()
             NotificationLogWriter.appendDebugEvent(
-                this, "youtube_controller_state", "result" to "security_exception"
+                this, "music_controller_state", "result" to "security_exception"
             )
             if (shouldRetryControllerAttach()) scheduleControllerAttachRetry("security_exception")
         }
+    }
+
+    private fun detachAllControllers() {
+        for ((pkg, ctrl) in controllers) {
+            registeredCallbacks[pkg]?.let(ctrl::unregisterCallback)
+        }
+        controllers.clear()
+        registeredCallbacks.clear()
     }
 
     private fun shouldRetryControllerAttach(): Boolean {
@@ -312,16 +336,16 @@ class MusicNotificationListener : NotificationListenerService() {
         attachRetryScheduled = true
         attachRetryCount++
         NotificationLogWriter.appendDebugEvent(
-            this,
-            "youtube_controller_retry_scheduled",
+            this, "music_controller_retry_scheduled",
             "reason" to reason,
             "retryCount" to attachRetryCount,
             "maxRetry" to ATTACH_RETRY_MAX
         )
         attachRetryHandler.postDelayed({
             attachRetryScheduled = false
-            attachYoutubeController()
-            if (controller == null) {
+            attachMusicControllers()
+            val targetPkg = AppPrefs.activeMusicPackage(this).ifBlank { MusicSessionHelper.YOUTUBE_MUSIC }
+            if (!controllers.containsKey(targetPkg)) {
                 scheduleControllerAttachRetry("retry_still_none")
             } else {
                 attachRetryCount = 0

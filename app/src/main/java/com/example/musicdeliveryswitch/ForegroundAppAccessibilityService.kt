@@ -277,15 +277,16 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
 
         if (!AppPrefs.isTargetActive(this)) {
             AppPrefs.setTargetActive(this, true)
-            if (MusicSessionHelper.isYoutubeMusicPlaying(this)) {
-                MusicSessionHelper.pauseYoutubeMusic(this)
+            if (MusicSessionHelper.isAnyMusicPlaying(this)) {
+                MusicSessionHelper.pauseActivePlayer(this)
                 NotificationLogWriter.appendDebugEvent(
                     this,
                     "music_pause_triggered",
                     "package" to packageName,
                     "reason" to "delivery_foreground"
                 )
-            } else if (AppPrefs.isAutoPaused(this) && !MusicSessionHelper.isYoutubeMusicPaused(this)) {
+            } else if (AppPrefs.isAutoPaused(this) &&
+                !MusicSessionHelper.isPaused(this, AppPrefs.activeMusicPackage(this).ifBlank { MusicSessionHelper.YOUTUBE_MUSIC })) {
                 // 음악이 PAUSED 상태가 아닌데 autoPaused=true → stale 플래그 초기화
                 // STATE_PAUSED는 우리가 일시정지한 정상 상태이므로 stale로 판단하지 않음
                 AppPrefs.setAutoPaused(this, false)
@@ -447,7 +448,7 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             }
             pendingResumePackage = null
             pendingResumeRunnable = null
-            MusicSessionHelper.resumeYoutubeMusicIfAutoPaused(this)
+            MusicSessionHelper.resumeIfAutoPaused(this)
         }
         handler.postDelayed(pendingResumeRunnable!!, delayMs)
     }

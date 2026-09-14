@@ -1,6 +1,18 @@
 package com.example.musicdeliveryswitch
 
 object AppConstants {
+    // Music apps
+    const val PKG_YOUTUBE_MUSIC = "com.google.android.apps.youtube.music"
+    const val PKG_SPOTIFY = "com.spotify.music"
+    const val PKG_MELON = "com.music.melon"
+    const val PKG_GENIE = "com.kt.genie"
+    val SUPPORTED_MUSIC_APPS = listOf(
+        PKG_YOUTUBE_MUSIC,
+        PKG_SPOTIFY,
+        PKG_MELON,
+        PKG_GENIE
+    )
+
     // Delivery apps
     const val PKG_BAEMIN = "com.woowahan.bros"
     const val PKG_COUPANG_EATS = "com.coupang.mobile.eats.courier"

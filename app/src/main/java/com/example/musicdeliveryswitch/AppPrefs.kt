@@ -22,6 +22,7 @@ object AppPrefs {
     private const val KEY_LAST_DELIVERY_DESTINATION_TEXT = "last_delivery_destination_text"
     private const val KEY_LAST_DELIVERY_DESTINATION_AT = "last_delivery_destination_at"
     private const val KEY_LAST_AUTO_OPEN_SENT_AT_PREFIX = "last_auto_open_sent_at_"
+    private const val KEY_ACTIVE_MUSIC_PACKAGE = "active_music_package"
 
     private fun prefs(context: Context) = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -93,4 +94,14 @@ object AppPrefs {
 
     fun clearAutoOpenSentAt(context: Context, packageName: String) =
         prefs(context).edit().remove(KEY_LAST_AUTO_OPEN_SENT_AT_PREFIX + packageName).apply()
+
+    // 일시정지한 음악 앱 패키지명 — 배달 끝난 후 정확한 앱을 재개하기 위해 저장
+    fun activeMusicPackage(context: Context): String =
+        prefs(context).getString(KEY_ACTIVE_MUSIC_PACKAGE, "") ?: ""
+
+    fun setActiveMusicPackage(context: Context, packageName: String) =
+        prefs(context).edit().putString(KEY_ACTIVE_MUSIC_PACKAGE, packageName).apply()
+
+    fun clearActiveMusicPackage(context: Context) =
+        prefs(context).edit().remove(KEY_ACTIVE_MUSIC_PACKAGE).apply()
 }

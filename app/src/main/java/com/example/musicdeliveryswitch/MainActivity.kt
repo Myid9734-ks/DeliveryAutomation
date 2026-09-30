@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.musicdeliveryswitch.databinding.ActivityMainBinding
 
@@ -116,6 +117,8 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
 
+        binding.buttonShareLog.setOnClickListener { shareLog() }
+
         binding.buttonBatteryOptimization.setOnClickListener {
             NotificationLogWriter.appendDebugEvent(
                 this,
@@ -153,6 +156,39 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         status()
         binding.root.post { permissions() }
+    }
+
+    private fun shareLog() {
+        val uri = NotificationLogWriter.getLogUri(this) ?: run {
+            Toast.makeText(this, "로그 파일이 없습니다.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "message/rfc822"
+                putExtra(Intent.EXTRA_EMAIL, arrayOf(AppConstants.SUPPORT_EMAIL))
+                putExtra(Intent.EXTRA_SUBJECT, "배달 자동화 오류 문의")
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                setPackage("com.google.android.gm")
+            }
+            startActivity(intent)
+        } catch (_: Exception) {
+            // Gmail 미설치 시 이메일 앱 선택창으로 폴백
+            try {
+                val fallback = Intent(Intent.ACTION_SEND).apply {
+                    type = "message/rfc822"
+                    putExtra(Intent.EXTRA_EMAIL, arrayOf(AppConstants.SUPPORT_EMAIL))
+                    putExtra(Intent.EXTRA_SUBJECT, "배달 자동화 오류 문의")
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(fallback, "이메일 앱 선택"))
+            } catch (e2: Exception) {
+                NotificationLogWriter.appendDebugEvent(this, "share_log_failed", "error" to (e2.message ?: "unknown"))
+                Toast.makeText(this, "이메일 앱을 찾을 수 없습니다.", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun resetMusicState() {

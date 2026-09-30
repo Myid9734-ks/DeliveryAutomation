@@ -65,6 +65,8 @@ object AppConstants {
     const val DELIVERY_AUTO_OPEN_DEDUPE_MS = 2000L
     const val LAUNCH_INTENT_DELAY_MS = 600L    // 알림음이 시작된 후 앱 전환 (즉시 전환 시 Android가 알림음 억제)
     const val CONTENT_INTENT_DELAY_MS = 1500L  // launchIntent 발동 후 주문화면 딥링크 (포그라운드 확인 대기)
+    // 연속 알림으로 인한 알림음 억제 감지 임계값 — 같은 앱에서 이 시간 이내에 알림이 연속 도착하면 Android가 신규주문 알림음을 억제할 수 있음
+    const val NOTIFICATION_SOUND_SUPPRESS_THRESHOLD_MS = 150L
 
     // 쿠팡 → 잘못된 네비 실행 시, 해당 네비 화면에서 목적지 텍스트 스캔
     const val NAVI_DEST_SCAN_DELAY_MS = 1500L      // 첫 스캔 전 대기 (네비 UI 로딩 대기)
@@ -89,4 +91,7 @@ object AppConstants {
     const val DEST_TEXT_DEPTH_LIMIT = 12
     const val DEST_TEXT_MIN_LEN = 4
     const val DEST_TEXT_MAX_LEN = 80
+
+    // Support
+    const val SUPPORT_EMAIL = "myid9734@gmail.com"
 }

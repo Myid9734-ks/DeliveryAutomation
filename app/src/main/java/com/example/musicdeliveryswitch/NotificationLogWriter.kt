@@ -1,14 +1,12 @@
 package com.example.musicdeliveryswitch
 
 import android.app.Notification
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.provider.MediaStore
 import android.service.notification.StatusBarNotification
 import java.io.File
 import java.text.SimpleDateFormat
@@ -18,7 +16,6 @@ import java.util.Locale
 object NotificationLogWriter {
     private const val LOG_ENABLED = true
     private const val FILE_NAME = "배달자동화_알림로그.txt"
-    private const val RELATIVE_PATH = "Download/DeliveryAutomation/"
 
     fun isDeliveryPackage(packageName: String?): Boolean = packageName in AppConstants.DELIVERY_PACKAGES
 
@@ -103,7 +100,6 @@ object NotificationLogWriter {
         safeWrite(context, log)
     }
 
-
     @Synchronized
     fun appendNavigationTransition(context: Context, fromPackage: String?, toPackage: String?, eventType: Int, eventText: String) {
         val log = buildString {
@@ -135,6 +131,12 @@ object NotificationLogWriter {
         safeWrite(context, log)
     }
 
+    fun getLogUri(context: Context): Uri? {
+        val file = logFile(context)
+        if (!file.exists()) return null
+        return androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }
+
     private fun bundleToText(bundle: Bundle?): String {
         if (bundle == null || bundle.isEmpty) return ""
         return try {
@@ -149,72 +151,27 @@ object NotificationLogWriter {
 
     private fun now(): String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.KOREA).format(Date())
 
+    private fun logFile(context: Context): File {
+        val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+        return File(dir, FILE_NAME)
+    }
+
+    private const val MAX_LOG_BYTES = 500 * 1024L // 500KB
+
     private fun safeWrite(context: Context, text: String) {
         if (!LOG_ENABLED) return
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) appendToDownloads(context, text)
-            else appendToAppExternal(context, text)
+            val file = logFile(context)
+            file.parentFile?.mkdirs()
+            if (file.exists() && file.length() > MAX_LOG_BYTES) trimLog(file)
+            file.appendText(text, Charsets.UTF_8)
         } catch (_: Exception) {
             // 로깅 실패가 기존 자동화 기능에 영향을 주지 않도록 무시한다.
         }
     }
 
-    private const val LOG_PREFS = "notification_log_writer"
-    private const val LOG_URI_KEY = "single_log_uri"
-
-    private fun appendToDownloads(context: Context, text: String) {
-        val resolver = context.contentResolver
-        val prefs = context.getSharedPreferences(LOG_PREFS, Context.MODE_PRIVATE)
-
-        // 한 번 만든 로그 파일의 Uri를 저장해 이후 모든 로그를 같은 파일에 append한다.
-        val savedUri = prefs.getString(LOG_URI_KEY, null)?.let { runCatching { Uri.parse(it) }.getOrNull() }
-        if (savedUri != null) {
-            try {
-                resolver.openOutputStream(savedUri, "wa")?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
-                    writer.write(text)
-                } ?: throw IllegalStateException("로그 파일 열기 실패")
-                return
-            } catch (_: Exception) {
-                prefs.edit().remove(LOG_URI_KEY).apply()
-            }
-        }
-
-        val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(MediaStore.Downloads._ID)
-        val selection = "${MediaStore.Downloads.DISPLAY_NAME}=? AND ${MediaStore.Downloads.RELATIVE_PATH}=?"
-        val args = arrayOf(FILE_NAME, RELATIVE_PATH)
-
-        // 현재 앱이 접근 가능한 동일 이름 파일이 있으면 가장 최근 파일 하나만 사용한다.
-        val existingUri = resolver.query(
-            collection, projection, selection, args,
-            "${MediaStore.Downloads.DATE_ADDED} DESC"
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID))
-                android.content.ContentUris.withAppendedId(collection, id)
-            } else null
-        }
-
-        val uri = existingUri ?: resolver.insert(
-            collection,
-            ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, FILE_NAME)
-                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
-                put(MediaStore.Downloads.RELATIVE_PATH, RELATIVE_PATH)
-            }
-        ) ?: return
-
-        prefs.edit().putString(LOG_URI_KEY, uri.toString()).apply()
-
-        resolver.openOutputStream(uri, "wa")?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
-            writer.write(text)
-        }
-    }
-
-    private fun appendToAppExternal(context: Context, text: String) {
-        val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
-        val file = File(dir, FILE_NAME)
-        file.parentFile?.mkdirs()
-        file.appendText(text, Charsets.UTF_8)
+    private fun trimLog(file: File) {
+        val content = file.readText(Charsets.UTF_8)
+        file.writeText(content.substring(content.length / 2), Charsets.UTF_8)
     }
 }

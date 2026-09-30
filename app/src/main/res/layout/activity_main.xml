@@ -5,7 +5,8 @@
     android:layout_height="match_parent"
     android:background="@color/app_surface"
     android:fillViewport="true"
-    android:clipToPadding="false">
+    android:clipToPadding="false"
+    android:fitsSystemWindows="true">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -171,7 +172,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:minHeight="52dp"
-                    android:text="YouTube Music 자동 정지/재생"
+                    android:text="음악 앱 자동 정지/재생"
                     android:textColor="@color/app_text_primary"
                     android:textSize="15sp" />
             </LinearLayout>
@@ -261,7 +262,27 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:paddingHorizontal="4dp"
-            android:text="YouTube Music이 실제 재생 중일 때만 자동 정지하며, 이 앱이 정지시킨 경우에만 다시 재생합니다."
+            android:text="음악 앱이 실제 재생 중일 때만 자동 정지하며, 이 앱이 정지시킨 경우에만 다시 재생합니다."
+            android:textColor="@color/app_text_secondary"
+            android:textSize="12sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonShareLog"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:layout_marginTop="22dp"
+            android:text="로그 파일 공유 (오류 문의용)"
+            android:textAllCaps="false"
+            android:textSize="15sp"
+            app:cornerRadius="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:paddingHorizontal="4dp"
+            android:text="오작동 문의 시 로그 파일을 이메일로 전송해 주세요."
             android:textColor="@color/app_text_secondary"
             android:textSize="12sp" />
 

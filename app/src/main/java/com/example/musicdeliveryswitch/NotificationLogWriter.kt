@@ -134,7 +134,11 @@ object NotificationLogWriter {
     fun getLogUri(context: Context): Uri? {
         val file = logFile(context)
         if (!file.exists()) return null
-        return androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        return try {
+            androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun bundleToText(bundle: Bundle?): String {

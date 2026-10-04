@@ -4,6 +4,8 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
+import android.media.MediaPlayer
+import android.media.RingtoneManager
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
@@ -21,6 +23,8 @@ class MusicNotificationListener : NotificationListenerService() {
     private val lastAutoOpenAt = mutableMapOf<String, Long>()
     // 패키지 단위 중복 방지 — 같은 앱에서 다른 키로 연속 알림 시(배민 FCM 중복 발송 등) 차단
     private val lastAutoOpenPkgAt = mutableMapOf<String, Long>()
+    // 패키지별 마지막 알림 수신 시각 — 연속 알림으로 인한 알림음 억제 감지용
+    private val lastPkgNotificationAt = mutableMapOf<String, Long>()
 
     // 컨트롤러 부착 재시도 — 음악 앱 세션이 늦게 열리는 경우를 대비
     private val attachRetryHandler = Handler(Looper.getMainLooper())
@@ -96,6 +100,19 @@ class MusicNotificationListener : NotificationListenerService() {
             )
 
             if (AppPrefs.isOrderAutoOpenEnabled(this) && isNewOrderNotification(sbn)) {
+                // 직전 같은 앱 알림이 threshold ms 이내면 Android가 신규주문 알림음을 억제했을 가능성
+                // (배민: BrosRiders 상태 알림이 신규배달 알림 직전에 갱신되어 알림음 rate-limit 발생)
+                val elapsedSinceLastNoti = SystemClock.elapsedRealtime() - (lastPkgNotificationAt[sbn.packageName] ?: 0L)
+                if (elapsedSinceLastNoti < AppConstants.NOTIFICATION_SOUND_SUPPRESS_THRESHOLD_MS) {
+                    playOrderAlertSound()
+                    NotificationLogWriter.appendDebugEvent(
+                        this, "order_alert_sound_played",
+                        "package" to sbn.packageName,
+                        "reason" to "burst_suppression",
+                        "elapsedMs" to elapsedSinceLastNoti
+                    )
+                }
+
                 NotificationLogWriter.appendDebugEvent(
                     this,
                     "new_order_detected",
@@ -113,6 +130,9 @@ class MusicNotificationListener : NotificationListenerService() {
                     "matchedRule" to isNewOrderNotification(sbn)
                 )
             }
+
+            // 마지막 알림 수신 시각 갱신 (신규주문 포함 모든 배달앱 알림)
+            lastPkgNotificationAt[sbn.packageName] = SystemClock.elapsedRealtime()
         }
 
         if (sbn.packageName in AppConstants.SUPPORTED_MUSIC_APPS) attachMusicControllers()
@@ -184,12 +204,15 @@ class MusicNotificationListener : NotificationListenerService() {
             "hasLaunchIntent" to (launchIntent != null)
         )
 
-        // 알림음이 시작될 시간을 확보하기 위해 launchIntent를 지연 발동
-        // (즉시 포그라운드 전환 시 Android가 해당 앱의 알림음을 억제하는 문제 방지)
         Handler(Looper.getMainLooper()).postDelayed({
-            // 1단계: launchIntent로 포그라운드 전환
-            // FLAG_ACTIVITY_REORDER_TO_FRONT: 이미 실행 중이면 기존 액티비티를 앞으로 → 콜드스타트 없음
-            if (launchIntent != null) {
+            // 배민: contentIntent 단독으로 앱 실행 + 수락/거절 화면 직접 이동 (React Native 딥링크)
+            // launchIntent를 먼저 쏘면 일반 화면이 열린 후 딥링크 타이밍 어긋남
+            // 쿠팡 등: 1단계 launchIntent → 2단계 contentIntent (기존 방식 유지)
+            val baeminDirect = sbn.packageName == AppConstants.PKG_BAEMIN && contentIntent != null
+
+            if (!baeminDirect && launchIntent != null) {
+                // 1단계: launchIntent로 포그라운드 전환
+                // FLAG_ACTIVITY_REORDER_TO_FRONT: 이미 실행 중이면 기존 액티비티를 앞으로 → 콜드스타트 없음
                 try {
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                     startActivity(launchIntent)
@@ -215,8 +238,10 @@ class MusicNotificationListener : NotificationListenerService() {
                 }
             }
 
-            // 2단계: contentIntent로 주문화면 딥링크 (수락/거절 화면으로 직접 이동)
-            // launchIntent 발동 후 CONTENT_INTENT_DELAY_MS 대기 후 무조건 발동
+            // 배민: contentIntent 즉시 실행 (추가 대기 없음)
+            // 그 외: launchIntent 발동 후 CONTENT_INTENT_DELAY_MS 대기 → contentIntent로 수락/거절 화면 딥링크
+            val contentDelay = if (baeminDirect) 0L else AppConstants.CONTENT_INTENT_DELAY_MS
+
             if (contentIntent != null) {
                 Handler(Looper.getMainLooper()).postDelayed({
                     try {
@@ -228,15 +253,35 @@ class MusicNotificationListener : NotificationListenerService() {
                             "creatorUid" to contentIntent.creatorUid
                         )
                         contentIntent.send()
+                        AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
                         NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
-                    } catch (_: PendingIntent.CanceledException) {
-                        // 만료된 intent — 무시, launchIntent가 이미 전송됨
                     } catch (e: Exception) {
                         NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
                     }
-                }, AppConstants.CONTENT_INTENT_DELAY_MS)
+                }, contentDelay)
+            } else if (baeminDirect.not() && launchIntent == null) {
+                NotificationLogWriter.appendDebugEvent(
+                    this,
+                    "delivery_app_open_skipped",
+                    "package" to sbn.packageName,
+                    "reason" to "no_intent_available"
+                )
             }
         }, AppConstants.LAUNCH_INTENT_DELAY_MS)
+    }
+
+    private fun playOrderAlertSound() {
+        try {
+            MediaPlayer.create(this, R.raw.baemin_new_order)?.apply {
+                setOnCompletionListener { release() }
+                start()
+            }
+        } catch (_: Exception) {
+            try {
+                val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                RingtoneManager.getRingtone(this, soundUri)?.play()
+            } catch (_: Exception) { }
+        }
     }
 
     /** SUPPORTED_MUSIC_APPS 전체의 MediaController를 최신 세션으로 갱신 */

@@ -413,7 +413,13 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             "대기배달",
             // 지도/검색 버튼 텍스트 — "지도앱으로 검색하기" 등 UI 문구
             "검색하기",
-            "지도앱"
+            "지도앱",
+            // 배민 배차대기 화면 텍스트 — 실제 배달 목적지가 아닌 대기 상태 안내 문구
+            // "배차대기중_상단_마이페이지_버튼", "위치와 가까운 배차를 찾고 있어요" 등 포함
+            "배차대기",
+            "배차를 찾",
+            "가까운 배차",
+            "주문을 찾는 중"
         ).any { token -> line.contains(token) }
         return koreanNoise
     }

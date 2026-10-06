@@ -205,14 +205,10 @@ class MusicNotificationListener : NotificationListenerService() {
         )
 
         Handler(Looper.getMainLooper()).postDelayed({
-            // 배민: contentIntent 단독으로 앱 실행 + 수락/거절 화면 직접 이동 (React Native 딥링크)
-            // launchIntent를 먼저 쏘면 일반 화면이 열린 후 딥링크 타이밍 어긋남
-            // 쿠팡 등: 1단계 launchIntent → 2단계 contentIntent (기존 방식 유지)
-            val baeminDirect = sbn.packageName == AppConstants.PKG_BAEMIN && contentIntent != null
-
-            if (!baeminDirect && launchIntent != null) {
-                // 1단계: launchIntent로 포그라운드 전환
-                // FLAG_ACTIVITY_REORDER_TO_FRONT: 이미 실행 중이면 기존 액티비티를 앞으로 → 콜드스타트 없음
+            // 1단계: launchIntent로 포그라운드 전환 (앱 종류 무관)
+            // FLAG_ACTIVITY_REORDER_TO_FRONT: 이미 실행 중이면 기존 액티비티를 앞으로 → 콜드스타트 없음
+            // 배민 contentIntent는 내부 BroadcastReceiver를 통한 딥링크 → 앱이 포그라운드 상태여야 실행됨
+            if (launchIntent != null) {
                 try {
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                     startActivity(launchIntent)
@@ -238,9 +234,8 @@ class MusicNotificationListener : NotificationListenerService() {
                 }
             }
 
-            // 배민: contentIntent 즉시 실행 (추가 대기 없음)
-            // 그 외: launchIntent 발동 후 CONTENT_INTENT_DELAY_MS 대기 → contentIntent로 수락/거절 화면 딥링크
-            val contentDelay = if (baeminDirect) 0L else AppConstants.CONTENT_INTENT_DELAY_MS
+            // 2단계: launchIntent 발동 후 CONTENT_INTENT_DELAY_MS 대기 → contentIntent로 수락/거절 화면 딥링크
+            val contentDelay = AppConstants.CONTENT_INTENT_DELAY_MS
 
             if (contentIntent != null) {
                 Handler(Looper.getMainLooper()).postDelayed({
@@ -259,7 +254,7 @@ class MusicNotificationListener : NotificationListenerService() {
                         NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
                     }
                 }, contentDelay)
-            } else if (baeminDirect.not() && launchIntent == null) {
+            } else if (launchIntent == null) {
                 NotificationLogWriter.appendDebugEvent(
                     this,
                     "delivery_app_open_skipped",

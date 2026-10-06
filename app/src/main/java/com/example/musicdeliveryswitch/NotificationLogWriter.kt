@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.service.notification.StatusBarNotification
+import android.util.Log
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -169,8 +170,8 @@ object NotificationLogWriter {
             file.parentFile?.mkdirs()
             if (file.exists() && file.length() > MAX_LOG_BYTES) trimLog(file)
             file.appendText(text, Charsets.UTF_8)
-        } catch (_: Exception) {
-            // 로깅 실패가 기존 자동화 기능에 영향을 주지 않도록 무시한다.
+        } catch (e: Exception) {
+            Log.e("NotificationLogWriter", "로그 쓰기 실패: ${e.message}", e)
         }
     }
 

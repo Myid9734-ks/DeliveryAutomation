@@ -18,6 +18,9 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
     private var deliveryExitGraceUntil = 0L
     private var pendingResumePackage: String? = null
     private var pendingResumeRunnable: Runnable? = null
+    // 배달앱 진입 전에 내비가 이미 실행 중이었는지 — 배달앱 exit 시 리셋
+    // true이면 배달앱에서 나온 후 해당 내비로 복귀한 것 → 리다이렉트 스킵
+    private var naviWasActiveBeforeDeliveryExit = false
 
     private data class PendingNaviScan(
         val scanPackage: String,   // 목적지 스캔할 네비 앱 패키지
@@ -79,6 +82,7 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         cancelPendingNaviScan()
         navigationTakeoverUntil = 0L
         deliveryExitGraceUntil = 0L
+        naviWasActiveBeforeDeliveryExit = false
         AppPrefs.setLastForegroundPackage(this, "")
         NotificationLogWriter.appendDebugEvent(this, "accessibility_service_connected")
     }
@@ -108,6 +112,7 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             deliveryExitGraceUntil = SystemClock.elapsedRealtime() + AppConstants.DELIVERY_EXIT_GRACE_MS
             AppPrefs.setTargetActive(this, false)
             AppPrefs.setNavSessionActive(this, false)
+            naviWasActiveBeforeDeliveryExit = false
             NotificationLogWriter.appendDebugEvent(
                 this,
                 "delivery_foreground_exit",
@@ -137,8 +142,18 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         if (packageName !in AppConstants.NAVIGATION_PACKAGES) return
 
         // 배달앱에서 직접 열린 내비가 선택된 내비와 다르면 리다이렉트
+        // 단, 배달앱 진입 전 이미 실행 중이던 내비로 복귀하는 경우는 스킵
         if (previousPackage in AppConstants.DELIVERY_PACKAGES) {
-            redirectToSelectedNaviIfNeeded(packageName, previousPackage)
+            if (naviWasActiveBeforeDeliveryExit) {
+                NotificationLogWriter.appendDebugEvent(
+                    this, "navi_redirect_skipped",
+                    "reason" to "navi_was_active_before_delivery",
+                    "package" to packageName
+                )
+            } else {
+                redirectToSelectedNaviIfNeeded(packageName, previousPackage)
+            }
+            naviWasActiveBeforeDeliveryExit = true
         }
 
         if (!AppPrefs.isTargetActive(this)) return

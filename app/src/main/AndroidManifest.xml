@@ -25,8 +25,7 @@
             android:name="com.example.musicdeliveryswitch.MainActivity"
             android:enabled="true"
             android:exported="true"
-            android:excludeFromRecents="true"
-            android:noHistory="true">
+            android:excludeFromRecents="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

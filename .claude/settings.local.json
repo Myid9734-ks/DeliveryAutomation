@@ -1,7 +1,36 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git config:*)"
+      "Bash(git config:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(JAVA_HOME=\"C:/Program Files/Android/Android Studio/jbr\" ./gradlew assembleDebug)",
+      "WebSearch",
+      "WebFetch(domain:devtalk.kakao.com)",
+      "WebFetch(domain:guide.ncloud-docs.com)",
+      "WebFetch(domain:developers.kakao.com)",
+      "WebFetch(domain:www.mrlatte.net)",
+      "WebFetch(domain:tmapapi.tmapmobility.com)",
+      "WebFetch(domain:community.openapi.sk.com)",
+      "WebFetch(domain:skopenapi.readme.io)",
+      "WebFetch(domain:developers.kakaomobility.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:openapi.sk.com)",
+      "WebFetch(domain:code.mrlatte.net)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Java/jdk-17\" ./gradlew assembleDebug)",
+      "Read(//c/Program Files/Java/**)",
+      "Read(//c/Program Files/**)",
+      "Bash(adb devices:*)",
+      "Bash(cmd.exe /c \"where adb\")",
+      "Bash(cmd.exe /c \"dir C:\\\\Users\\\\myid9734\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\")",
+      "Bash(cmd.exe:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(python3:*)",
+      "Bash(adb shell:*)",
+      "Bash(mkdir -p /c/Users/myid9734/Downloads/baemin_analysis)",
+      "Bash(unzip -o /c/Users/myid9734/Downloads/baemin_base.apk -d /c/Users/myid9734/Downloads/baemin_analysis)"
     ]
   }
 }

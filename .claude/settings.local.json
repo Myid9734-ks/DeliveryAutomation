@@ -30,7 +30,11 @@
       "Bash(python3:*)",
       "Bash(adb shell:*)",
       "Bash(mkdir -p /c/Users/myid9734/Downloads/baemin_analysis)",
-      "Bash(unzip -o /c/Users/myid9734/Downloads/baemin_base.apk -d /c/Users/myid9734/Downloads/baemin_analysis)"
+      "Bash(unzip -o /c/Users/myid9734/Downloads/baemin_base.apk -d /c/Users/myid9734/Downloads/baemin_analysis)",
+      "Bash(sed 's/package=//')",
+      "Bash(sed 's/fromPackage=//')",
+      "Bash(xargs grep:*)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Android/Android Studio/jbr\" ./gradlew assembleDebug)"
     ]
   }
 }

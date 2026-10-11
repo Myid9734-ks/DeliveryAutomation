@@ -112,7 +112,13 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             deliveryExitGraceUntil = SystemClock.elapsedRealtime() + AppConstants.DELIVERY_EXIT_GRACE_MS
             AppPrefs.setTargetActive(this, false)
             AppPrefs.setNavSessionActive(this, false)
-            naviWasActiveBeforeDeliveryExit = false
+            // 배달앱 → 내비앱 전환 시에는 리셋하지 않음
+            // handleNavigationForeground가 같은 이벤트에서 즉시 naviWasActiveBeforeDeliveryExit를 읽기 때문에
+            // 여기서 리셋하면 이전 내비 세션 정보가 소실되어 불필요한 카카오맵 재실행이 발생함
+            // (예: 배민 포그라운드 중 티맵 플로팅 창 탭 → 카카오맵 중복 실행)
+            if (packageName !in AppConstants.NAVIGATION_PACKAGES) {
+                naviWasActiveBeforeDeliveryExit = false
+            }
             NotificationLogWriter.appendDebugEvent(
                 this,
                 "delivery_foreground_exit",

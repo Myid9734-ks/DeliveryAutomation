@@ -1,4 +1,4 @@
-package com.example.musicdeliveryswitch
+package kr.deliveryauto.app
 
 import android.app.Notification
 import android.content.Context
@@ -177,6 +177,9 @@ object NotificationLogWriter {
 
     private fun trimLog(file: File) {
         val content = file.readText(Charsets.UTF_8)
-        file.writeText(content.substring(content.length / 2), Charsets.UTF_8)
+        // 구분선("===") 기준으로 잘라 로그 항목이 중간에 끊기지 않도록 함
+        val halfPoint = content.length / 2
+        val cutIndex = content.indexOf("====", halfPoint).takeIf { it >= 0 } ?: halfPoint
+        file.writeText(content.substring(cutIndex), Charsets.UTF_8)
     }
 }

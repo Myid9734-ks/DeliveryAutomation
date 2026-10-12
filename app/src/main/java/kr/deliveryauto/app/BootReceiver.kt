@@ -1,4 +1,4 @@
-package com.example.musicdeliveryswitch
+package kr.deliveryauto.app
 
 import android.content.BroadcastReceiver
 import android.content.ComponentName

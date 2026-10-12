@@ -4,15 +4,26 @@ plugins {
 }
 
 android {
-    namespace = "com.example.musicdeliveryswitch"
+    namespace = "kr.deliveryauto.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.musicdeliveryswitch"
+        applicationId = "kr.deliveryauto.app"
         minSdk = 28
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
     }
 
     buildFeatures {

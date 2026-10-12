@@ -1,4 +1,4 @@
-package com.example.musicdeliveryswitch
+package kr.deliveryauto.app
 
 import android.content.ComponentName
 import android.content.Intent
@@ -7,8 +7,9 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import com.example.musicdeliveryswitch.databinding.ActivityMainBinding
+import kr.deliveryauto.app.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
@@ -163,6 +164,15 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "로그 파일이 없습니다.", Toast.LENGTH_SHORT).show()
             return
         }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.log_share_warning_title)
+            .setMessage(R.string.log_share_warning_message)
+            .setPositiveButton(R.string.log_share_confirm) { _, _ -> sendLogEmail(uri) }
+            .setNegativeButton(R.string.log_share_cancel, null)
+            .show()
+    }
+
+    private fun sendLogEmail(uri: Uri) {
         try {
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "message/rfc822"
@@ -277,12 +287,12 @@ class MainActivity : AppCompatActivity() {
             else -> "TMAP"
         }
         binding.textStatus.text = buildString {
-            append("Navi: ${if (AppPrefs.isNaviEnabled(this@MainActivity)) "ON" else "OFF"} ($n)\n")
-            append("Order auto open: ${if (AppPrefs.isOrderAutoOpenEnabled(this@MainActivity)) "ON" else "OFF"}\n")
-            append("Music: ${if (AppPrefs.isMusicEnabled(this@MainActivity)) "ON" else "OFF"}\n")
-            append("Accessibility: ${if (access()) "GRANTED" else "NEEDED"}\n")
-            append("Notification access: ${if (notifyOK()) "GRANTED" else "NEEDED"}\n")
-            append("Battery optimization: ${if (batteryOK()) "EXCLUDED" else "NEEDED"}")
+            append("내비 전환: ${if (AppPrefs.isNaviEnabled(this@MainActivity)) "켜짐" else "꺼짐"} ($n)\n")
+            append("주문 자동열기: ${if (AppPrefs.isOrderAutoOpenEnabled(this@MainActivity)) "켜짐" else "꺼짐"}\n")
+            append("음악 제어: ${if (AppPrefs.isMusicEnabled(this@MainActivity)) "켜짐" else "꺼짐"}\n")
+            append("접근성 권한: ${if (access()) "허용됨" else "필요"}\n")
+            append("알림 접근 권한: ${if (notifyOK()) "허용됨" else "필요"}\n")
+            append("배터리 최적화: ${if (batteryOK()) "제외됨" else "필요"}")
         }
         NotificationLogWriter.appendDebugEvent(
             this,
@@ -312,7 +322,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun batteryOK(): Boolean {
-        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        val pm = getSystemService(POWER_SERVICE) as? PowerManager ?: return false
         return pm.isIgnoringBatteryOptimizations(packageName)
     }
 }

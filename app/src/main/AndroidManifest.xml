@@ -6,23 +6,32 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <queries>
+        <!-- 내비게이션 앱 -->
         <package android:name="com.skt.tmap.ku" />
         <package android:name="com.locnall.KimGiSa" />
         <package android:name="net.daum.android.map" />
         <package android:name="com.nhn.android.nmap" />
+        <!-- 음악 앱 -->
         <package android:name="com.google.android.apps.youtube.music" />
+        <package android:name="com.spotify.music" />
+        <package android:name="com.music.melon" />
+        <package android:name="com.kt.genie" />
+        <!-- 배달 앱 -->
+        <package android:name="com.woowahan.bros" />
+        <package android:name="com.coupang.mobile.eats.courier" />
     </queries>
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="배달 자동화"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MusicDeliverySwitch">
+        android:theme="@style/Theme.DeliveryAuto">
 
         <activity
-            android:name="com.example.musicdeliveryswitch.MainActivity"
+            android:name=".MainActivity"
             android:enabled="true"
             android:exported="true"
             android:excludeFromRecents="true">
@@ -33,7 +42,7 @@
         </activity>
 
         <activity
-            android:name="com.example.musicdeliveryswitch.NavigationRedirectActivity"
+            android:name=".NavigationRedirectActivity"
             android:theme="@android:style/Theme.NoDisplay"
             android:excludeFromRecents="true"
             android:noHistory="true"
@@ -73,7 +82,7 @@
         </activity>
 
         <service
-            android:name="com.example.musicdeliveryswitch.ForegroundAppAccessibilityService"
+            android:name=".ForegroundAppAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="false">
             <intent-filter>
@@ -85,7 +94,7 @@
         </service>
 
         <service
-            android:name="com.example.musicdeliveryswitch.MusicNotificationListener"
+            android:name=".MusicNotificationListener"
             android:label="배달 자동화"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
             android:exported="false">
@@ -95,9 +104,10 @@
         </service>
 
         <receiver
-            android:name="com.example.musicdeliveryswitch.BootReceiver"
+            android:name=".BootReceiver"
             android:enabled="true"
-            android:exported="true">
+            android:exported="true"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>

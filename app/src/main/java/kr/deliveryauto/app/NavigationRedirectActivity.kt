@@ -1,4 +1,4 @@
-package com.example.musicdeliveryswitch
+package kr.deliveryauto.app
 
 import android.app.Activity
 import android.app.ActivityManager
@@ -19,7 +19,25 @@ class NavigationRedirectActivity : Activity() {
         handle(i)
     }
 
+    companion object {
+        /** 이 앱이 처리하는 딥링크 스킴 — 매니페스트 intent-filter와 동기화 필수 */
+        private val ALLOWED_SCHEMES = setOf("kakaomap", "tmap", "kakaonavi", "kakaonavi-sdk", "nmap")
+    }
+
     private fun handle(i: Intent?) {
+        // 인텐트 유효성 검증 — 허용된 URI 스킴만 처리
+        val scheme = i?.data?.scheme
+        if (scheme != null && scheme !in ALLOWED_SCHEMES) {
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "navigation_request_blocked",
+                "reason" to "invalid_scheme",
+                "scheme" to scheme
+            )
+            finish()
+            return
+        }
+
         val selected = AppPrefs.selectedNavi(this)
         val redirectFromPkg = i?.getStringExtra(AppConstants.EXTRA_REDIRECT_FROM_PKG).orEmpty()
         NotificationLogWriter.appendNavigationIntent(this, i, selected, result = "received")
@@ -82,7 +100,7 @@ class NavigationRedirectActivity : Activity() {
                 "selectedNavi" to selected,
                 "data" to u.toString()
             )
-            Toast.makeText(this, "Destination could not be read.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "목적지를 읽을 수 없습니다.", Toast.LENGTH_SHORT).show()
             finish()
             return
         }
@@ -228,8 +246,9 @@ class NavigationRedirectActivity : Activity() {
     }
 
     private fun launchNavigation(lat: String?, lon: String?, query: String? = null, redirectFromPkg: String = "") {
-        val defaultName = Uri.encode("delivery")
-        val searchName = Uri.encode(query ?: "delivery")
+        val displayName = query ?: "delivery"
+        val defaultName = Uri.encode(displayName)
+        val searchName = Uri.encode(displayName)
         val selected = AppPrefs.selectedNavi(this)
 
         val target = when (selected) {
@@ -321,7 +340,7 @@ class NavigationRedirectActivity : Activity() {
                 "selectedNavi" to selected,
                 "targetPackage" to targetPackage
             )
-            Toast.makeText(this, "Selected navigation app is not installed.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "선택한 내비 앱이 설치되어 있지 않습니다.", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             NotificationLogWriter.appendNavigationIntent(this, null, selected, lat, lon, "selected_nav_fail:${e.javaClass.simpleName}:${e.message}")
             NotificationLogWriter.appendDebugEvent(
@@ -332,7 +351,7 @@ class NavigationRedirectActivity : Activity() {
                 "targetPackage" to targetPackage,
                 "error" to "${e.javaClass.simpleName}: ${e.message}"
             )
-            Toast.makeText(this, "Navigation launch failed: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "내비 실행에 실패했습니다.", Toast.LENGTH_LONG).show()
         }
     }
 }

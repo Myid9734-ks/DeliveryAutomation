@@ -1,4 +1,4 @@
-package com.example.musicdeliveryswitch
+package kr.deliveryauto.app
 
 import android.content.ComponentName
 import android.content.Context
@@ -166,18 +166,4 @@ object MusicSessionHelper {
         }
     }
 
-    // ── 하위 호환 래퍼 (기존 호출부 rename 전까지 유지) ─────────────
-
-    @Deprecated("pauseActivePlayer() 사용", ReplaceWith("pauseActivePlayer(context)"))
-    fun pauseYoutubeMusic(context: Context): Boolean = pauseActivePlayer(context)
-
-    @Deprecated("resumeIfAutoPaused() 사용", ReplaceWith("resumeIfAutoPaused(context)"))
-    fun resumeYoutubeMusicIfAutoPaused(context: Context) = resumeIfAutoPaused(context)
-
-    @Deprecated("isPlaying(context, packageName) 사용", ReplaceWith("isPlaying(context, YOUTUBE_MUSIC)"))
-    fun isYoutubeMusicPlaying(context: Context): Boolean = isAnyMusicPlaying(context)
-
-    @Deprecated("isPaused(context, packageName) 사용", ReplaceWith("isPaused(context, YOUTUBE_MUSIC)"))
-    fun isYoutubeMusicPaused(context: Context): Boolean =
-        isPaused(context, AppPrefs.activeMusicPackage(context).ifBlank { YOUTUBE_MUSIC })
 }

@@ -1,4 +1,4 @@
-package com.example.musicdeliveryswitch
+package kr.deliveryauto.app
 
 object AppConstants {
     // Music apps
@@ -93,5 +93,5 @@ object AppConstants {
     const val DEST_TEXT_MAX_LEN = 80
 
     // Support
-    const val SUPPORT_EMAIL = "myid9734@gmail.com"
+    const val SUPPORT_EMAIL = "kr.deliveryauto@gmail.com"
 }

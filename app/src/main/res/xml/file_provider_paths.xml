@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <external-files-path name="external_files_root" path="." />
-    <files-path name="internal_root" path="." />
+    <external-files-path name="log_downloads" path="Download" />
+    <files-path name="log_internal" path="." />
 </paths>

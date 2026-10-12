@@ -34,7 +34,14 @@
       "Bash(sed 's/package=//')",
       "Bash(sed 's/fromPackage=//')",
       "Bash(xargs grep:*)",
-      "Bash(JAVA_HOME=\"/c/Program Files/Android/Android Studio/jbr\" ./gradlew assembleDebug)"
+      "Bash(JAVA_HOME=\"/c/Program Files/Android/Android Studio/jbr\" ./gradlew assembleDebug)",
+      "Bash(adb install:*)",
+      "Bash(grep:*)",
+      "WebFetch(domain:myid9734-ks.github.io)",
+      "Read(//c/Users/myid9734/Documents/DeliveryAutomation/**)",
+      "Bash(find \"C:/Users/myid9734/Documents/DeliveryAutomation/app/src/main/res/\" -name \"ic_launcher*\" -exec ls -la {} \\\\; echo \"=== strings.xml ===\")",
+      "Bash(ls -la app/src/main/res/values*/)",
+      "Read(//tmp/**)"
     ]
   }
 }

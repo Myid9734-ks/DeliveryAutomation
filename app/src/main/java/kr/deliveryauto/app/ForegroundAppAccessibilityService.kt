@@ -1,4 +1,4 @@
-package com.example.musicdeliveryswitch
+package kr.deliveryauto.app
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
@@ -61,7 +61,16 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         handleOtherForeground(packageName)
     }
 
-    override fun onInterrupt() = Unit
+    override fun onInterrupt() {
+        cancelPendingResume()
+        handler.removeCallbacksAndMessages(null)
+    }
+
+    override fun onDestroy() {
+        cancelPendingResume()
+        handler.removeCallbacksAndMessages(null)
+        super.onDestroy()
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -333,7 +342,9 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
             "배차대기",
             "배차를 찾",
             "가까운 배차",
-            "주문을 찾는 중"
+            "주문을 찾는 중",
+            // 배민 배달료 안내 문구 — 실제 주소가 아닌 UI 텍스트
+            "실제 배달료와 다를 수 있"
         ).any { token -> line.contains(token) }
         return koreanNoise
     }
@@ -357,20 +368,21 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
     private fun scheduleResumeAfterDeliveryExit(packageName: String, delayMs: Long) {
         cancelPendingResume()
         pendingResumePackage = packageName
-        pendingResumeRunnable = Runnable {
+        val runnable = Runnable {
             if (pendingResumePackage != packageName) return@Runnable
             val currentPackage = AppPrefs.lastForegroundPackage(this)
             if (currentPackage in AppConstants.DELIVERY_PACKAGES ||
                 currentPackage in AppConstants.SYSTEM_DIALOG_PACKAGES ||
                 currentPackage in AppConstants.OVERLAY_TRANSITION_PACKAGES) {
-                handler.postDelayed(pendingResumeRunnable!!, delayMs)
+                pendingResumeRunnable?.let { handler.postDelayed(it, delayMs) }
                 return@Runnable
             }
             pendingResumePackage = null
             pendingResumeRunnable = null
             MusicSessionHelper.resumeIfAutoPaused(this)
         }
-        handler.postDelayed(pendingResumeRunnable!!, delayMs)
+        pendingResumeRunnable = runnable
+        handler.postDelayed(runnable, delayMs)
     }
 
     private fun cancelPendingResume() {

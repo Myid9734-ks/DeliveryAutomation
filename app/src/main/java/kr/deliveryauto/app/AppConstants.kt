@@ -94,4 +94,8 @@ object AppConstants {
 
     // Support
     const val SUPPORT_EMAIL = "kr.deliveryauto@gmail.com"
+
+    // Billing
+    const val PRODUCT_ID_PREMIUM = "premium_unlock"
+    const val TRIAL_DAYS = 3
 }

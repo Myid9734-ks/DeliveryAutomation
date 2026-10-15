@@ -23,6 +23,8 @@ object AppPrefs {
     private const val KEY_LAST_DELIVERY_DESTINATION_AT = "last_delivery_destination_at"
     private const val KEY_LAST_AUTO_OPEN_SENT_AT_PREFIX = "last_auto_open_sent_at_"
     private const val KEY_ACTIVE_MUSIC_PACKAGE = "active_music_package"
+    private const val KEY_TRIAL_START_DATE = "trial_start_date"
+    private const val KEY_PURCHASED = "purchased"
 
     private fun prefs(context: Context) = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -104,4 +106,32 @@ object AppPrefs {
 
     fun clearActiveMusicPackage(context: Context) =
         prefs(context).edit().remove(KEY_ACTIVE_MUSIC_PACKAGE).apply()
+
+    // 체험판 시작 시각 (epoch millis)
+    fun trialStartDate(context: Context): Long = prefs(context).getLong(KEY_TRIAL_START_DATE, 0L)
+
+    fun setTrialStartDate(context: Context, value: Long) = prefs(context).edit().putLong(KEY_TRIAL_START_DATE, value).apply()
+
+    // 정식 버전 구매 여부 (로컬 캐시)
+    fun isPurchased(context: Context): Boolean = prefs(context).getBoolean(KEY_PURCHASED, false)
+
+    fun setPurchased(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_PURCHASED, value).apply()
+
+    /** 체험 중이거나 구매 완료 시 true */
+    fun isFeatureUnlocked(context: Context): Boolean {
+        if (isPurchased(context)) return true
+        val start = trialStartDate(context)
+        if (start == 0L) return true // 아직 등록 전 — 첫 실행 허용
+        val elapsed = System.currentTimeMillis() - start
+        return elapsed < AppConstants.TRIAL_DAYS * 24 * 60 * 60 * 1000L
+    }
+
+    /** 체험 남은 일수 (만료 시 0) */
+    fun trialRemainingDays(context: Context): Int {
+        val start = trialStartDate(context)
+        if (start == 0L) return AppConstants.TRIAL_DAYS
+        val elapsed = System.currentTimeMillis() - start
+        val remaining = AppConstants.TRIAL_DAYS * 24 * 60 * 60 * 1000L - elapsed
+        return if (remaining <= 0) 0 else ((remaining / (24 * 60 * 60 * 1000L)) + 1).toInt()
+    }
 }

@@ -27,6 +27,9 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return
 
+        // 체험판 만료 & 미구매 시 자동화 중단
+        if (!AppPrefs.isFeatureUnlocked(this)) return
+
         // 비활성 윈도우(TMAP 플로팅 내비 위젯 등 오버레이)에서 온 이벤트 무시
         if (!isActiveWindow(event)) {
             NotificationLogWriter.appendDebugEvent(

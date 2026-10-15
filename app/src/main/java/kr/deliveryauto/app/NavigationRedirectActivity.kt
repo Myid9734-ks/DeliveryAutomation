@@ -51,6 +51,14 @@ class NavigationRedirectActivity : Activity() {
             "component" to i?.component?.flattenToShortString()
         )
 
+        // 체험판 만료 & 미구매 시 리다이렉트 없이 종료 (사용자에게 안내)
+        if (!AppPrefs.isFeatureUnlocked(this)) {
+            NotificationLogWriter.appendNavigationIntent(this, i, selected, result = "trial_expired")
+            Toast.makeText(this, "체험 기간이 만료되었습니다. 정식 버전을 구매해 주세요.", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+
         if (!AppPrefs.isNaviEnabled(this)) {
             NotificationLogWriter.appendNavigationIntent(this, i, selected, result = "navi_off")
             NotificationLogWriter.appendDebugEvent(

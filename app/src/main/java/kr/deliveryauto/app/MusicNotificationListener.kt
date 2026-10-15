@@ -88,6 +88,9 @@ class MusicNotificationListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
 
+        // 체험판 만료 & 미구매 시 자동화 중단
+        if (!AppPrefs.isFeatureUnlocked(this)) return
+
         if (sbn.packageName in AppConstants.DELIVERY_PACKAGES) {
             NotificationLogWriter.append(this, sbn)
             NotificationLogWriter.appendDebugEvent(

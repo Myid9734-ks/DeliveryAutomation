@@ -17,6 +17,16 @@
 # ViewBinding — 리플렉션 기반 inflate
 -keep class kr.deliveryauto.app.databinding.** { *; }
 
+# 결제 & 체험판 관리
+-keep class kr.deliveryauto.app.BillingManager { *; }
+-keep class kr.deliveryauto.app.TrialManager { *; }
+
+# Singleton 유틸리티 — 다른 클래스에서 정적 호출
+-keep class kr.deliveryauto.app.AppPrefs { *; }
+-keep class kr.deliveryauto.app.AppConstants { *; }
+-keep class kr.deliveryauto.app.MusicSessionHelper { *; }
+-keep class kr.deliveryauto.app.NotificationLogWriter { *; }
+
 # R8 full mode 호환
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile

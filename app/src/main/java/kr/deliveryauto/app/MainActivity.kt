@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -13,6 +14,7 @@ import kr.deliveryauto.app.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
+    private var billingManager: BillingManager? = null
     private var accessibilityOpened = false
     private var notificationOpened = false
     private var batteryOpened = false
@@ -21,6 +23,19 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // 체험판 등록/확인
+        TrialManager.registerOrVerify(this) { updateTrialUI() }
+
+        // 결제 관리자 초기화
+        billingManager = BillingManager(this) { success ->
+            if (success) updateTrialUI()
+        }
+        billingManager?.startConnection()
+
+        binding.buttonPurchase.setOnClickListener {
+            billingManager?.launchPurchase()
+        }
 
         binding.switchNavi.isChecked = AppPrefs.isNaviEnabled(this)
         binding.switchOrderAutoOpen.isChecked = AppPrefs.isOrderAutoOpenEnabled(this)
@@ -155,8 +170,54 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        updateTrialUI()
         status()
         binding.root.post { permissions() }
+    }
+
+    override fun onDestroy() {
+        billingManager?.endConnection()
+        super.onDestroy()
+    }
+
+    private fun updateTrialUI() {
+        val purchased = AppPrefs.isPurchased(this)
+        val unlocked = AppPrefs.isFeatureUnlocked(this)
+
+        if (purchased) {
+            binding.cardTrial.visibility = View.GONE
+        } else {
+            binding.cardTrial.visibility = View.VISIBLE
+            val remaining = AppPrefs.trialRemainingDays(this)
+            if (unlocked) {
+                binding.textTrialStatus.text = "체험판 (${remaining}일 남음)"
+                binding.textTrialDetail.text = "체험 기간이 끝나면 자동화 기능이 중단됩니다."
+                binding.buttonPurchase.visibility = View.VISIBLE
+                binding.buttonPurchase.text = billingManager?.getFormattedPrice()?.let {
+                    "정식 버전 구매 ($it)"
+                } ?: "정식 버전 구매"
+            } else {
+                binding.textTrialStatus.text = "체험 기간 만료"
+                binding.textTrialDetail.text = "정식 버전을 구매하면 모든 기능을 영구적으로 사용할 수 있습니다."
+                binding.buttonPurchase.visibility = View.VISIBLE
+                binding.buttonPurchase.text = billingManager?.getFormattedPrice()?.let {
+                    "정식 버전 구매 ($it)"
+                } ?: "정식 버전 구매"
+            }
+        }
+
+        // 만료 시 스위치 비활성화
+        setControlsEnabled(unlocked || purchased)
+    }
+
+    private fun setControlsEnabled(enabled: Boolean) {
+        binding.switchNavi.isEnabled = enabled
+        binding.switchOrderAutoOpen.isEnabled = enabled
+        binding.switchMusic.isEnabled = enabled
+        binding.radioTmap.isEnabled = enabled
+        binding.radioKakaoNavi.isEnabled = enabled
+        binding.radioKakaoMap.isEnabled = enabled
+        binding.radioNaver.isEnabled = enabled
     }
 
     private fun shareLog() {

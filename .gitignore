@@ -15,3 +15,6 @@ desktop.ini
 Thumbs.db
 
 .claude/worktrees/
+
+# Firebase (API 키 포함)
+app/google-services.json

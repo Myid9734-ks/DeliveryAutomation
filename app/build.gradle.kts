@@ -6,13 +6,13 @@ plugins {
 
 android {
     namespace = "kr.deliveryauto.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "kr.deliveryauto.app"
         minSdk = 28
-        targetSdk = 35
-        versionCode = 1
+        targetSdk = 36
+        versionCode = 2
         versionName = "1.0"
     }
 
@@ -50,5 +50,5 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore-ktx")
 
     // Google Play Billing
-    implementation("com.android.billingclient:billing-ktx:7.1.1")
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
 }

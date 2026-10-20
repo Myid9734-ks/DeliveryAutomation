@@ -103,21 +103,15 @@ class MusicNotificationListener : NotificationListenerService() {
             )
 
             if (AppPrefs.isOrderAutoOpenEnabled(this) && isNewOrderNotification(sbn)) {
-                // [변경] 기존: burst 억제(150ms 이내 연속 알림) 시에만 알림음 재생
-                // → 문제: 배민의 "배민 배달" 알림음(new_allocation.mp3)이 앱 전환(launchIntent) 시
-                //   Android에 의해 중단되어 "띵동"만 들리고 "배민 배달"이 안 들리는 현상 발생
-                // → 변경: 신규주문 감지 시 항상 알림음을 재생하여 앱 전환과 무관하게 소리가 나도록 함
-                // val elapsedSinceLastNoti = SystemClock.elapsedRealtime() - (lastPkgNotificationAt[sbn.packageName] ?: 0L)
-                // if (elapsedSinceLastNoti < AppConstants.NOTIFICATION_SOUND_SUPPRESS_THRESHOLD_MS) {
-                //     playOrderAlertSound()
-                //     ...
-                // }
-                playOrderAlertSound()
-                NotificationLogWriter.appendDebugEvent(
-                    this, "order_alert_sound_played",
-                    "package" to sbn.packageName,
-                    "reason" to "always_on_new_order"
-                )
+                // 배민 신규주문만 알림음 재생 (쿠팡은 자체 알림음 사용)
+                if (sbn.packageName == AppConstants.PKG_BAEMIN) {
+                    playOrderAlertSound()
+                    NotificationLogWriter.appendDebugEvent(
+                        this, "order_alert_sound_played",
+                        "package" to sbn.packageName,
+                        "reason" to "baemin_new_order"
+                    )
+                }
 
                 NotificationLogWriter.appendDebugEvent(
                     this,
@@ -262,65 +256,49 @@ class MusicNotificationListener : NotificationListenerService() {
         }
     }
 
-    /** 쿠팡 전용 — contentIntent 우선, launchIntent는 SINGLE_TOP으로 콜드스타트 방지 */
+    /** 쿠팡 전용 — launchIntent(SINGLE_TOP)로 포그라운드 전환 후 contentIntent로 주문 화면 이동 */
     private fun openCoupang(sbn: StatusBarNotification, contentIntent: PendingIntent?, launchIntent: Intent?) {
-        // [변경 이유] 쿠팡이츠는 Flutter 앱으로 SplashActivity → EatsDeliveryFlutterActivity 구조.
-        // 기존 FLAG_ACTIVITY_REORDER_TO_FRONT는 SplashActivity를 재생성하여 콜드스타트처럼 보였음.
-        // contentIntent에는 주문 payload가 포함되어 있어 수락/거절 화면으로 직행 가능.
-        if (contentIntent != null) {
+        // 1단계: launchIntent로 포그라운드 전환 (SINGLE_TOP으로 콜드스타트 방지)
+        if (launchIntent != null) {
             try {
-                NotificationLogWriter.appendDebugEvent(
-                    this, "content_intent_info",
-                    "package" to sbn.packageName,
-                    "creatorPackage" to contentIntent.creatorPackage,
-                    "creatorUid" to contentIntent.creatorUid
-                )
-                contentIntent.send()
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                startActivity(launchIntent)
                 AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "성공(SINGLE_TOP)")
                 NotificationLogWriter.appendDebugEvent(
                     this, "delivery_app_switch_result",
                     "package" to sbn.packageName,
-                    "method" to "contentIntent_only",
+                    "method" to "launchIntent_single_top",
                     "result" to "success"
                 )
             } catch (e: Exception) {
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
-                // contentIntent 실패 시 launchIntent로 폴백 (SINGLE_TOP으로 콜드스타트 방지)
-                launchCoupangFallback(sbn, launchIntent)
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
             }
-        } else {
-            launchCoupangFallback(sbn, launchIntent)
         }
-    }
 
-    /** 쿠팡 launchIntent 폴백 — FLAG_ACTIVITY_SINGLE_TOP으로 기존 Activity 재사용 */
-    private fun launchCoupangFallback(sbn: StatusBarNotification, launchIntent: Intent?) {
-        if (launchIntent == null) {
+        // 2단계: contentIntent로 주문 수락/거절 화면 딥링크
+        if (contentIntent != null) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    NotificationLogWriter.appendDebugEvent(
+                        this, "content_intent_info",
+                        "package" to sbn.packageName,
+                        "creatorPackage" to contentIntent.creatorPackage,
+                        "creatorUid" to contentIntent.creatorUid
+                    )
+                    contentIntent.send()
+                    AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
+                    NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
+                } catch (e: Exception) {
+                    NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
+                }
+            }, AppConstants.CONTENT_INTENT_DELAY_MS)
+        } else if (launchIntent == null) {
             NotificationLogWriter.appendDebugEvent(
                 this, "delivery_app_open_skipped",
                 "package" to sbn.packageName,
                 "reason" to "no_intent_available"
             )
-            return
-        }
-        try {
-            // [변경 이유] 기존 FLAG_ACTIVITY_REORDER_TO_FRONT가 Flutter SplashActivity를 재생성했음.
-            // FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_SINGLE_TOP: 이미 실행 중이면 기존 인스턴스의
-            // onNewIntent()를 호출하여 콜드스타트 없이 포그라운드 전환.
-            // 기존: launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            startActivity(launchIntent)
-            AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
-            NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "성공(SINGLE_TOP)")
-            NotificationLogWriter.appendDebugEvent(
-                this, "delivery_app_switch_result",
-                "package" to sbn.packageName,
-                "method" to "launchIntent_single_top",
-                "result" to "success"
-            )
-        } catch (e: Exception) {
-            NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 

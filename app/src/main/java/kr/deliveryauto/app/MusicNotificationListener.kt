@@ -103,14 +103,29 @@ class MusicNotificationListener : NotificationListenerService() {
             )
 
             if (AppPrefs.isOrderAutoOpenEnabled(this) && isNewOrderNotification(sbn)) {
-                // 배민 신규주문만 알림음 재생 (쿠팡은 자체 알림음 사용)
+                // [이전] 배민 신규주문 무조건 알림음 재생
+                // [문제] 배민이 BrosRiders 채널로 자체 알림음을 먼저 울리고(id=711),
+                //        직후 FCM(BROS_DELIVERY_ALLOCATION_NOTI)이 도착해 우리 알림음까지 → 2번 울림
+                // [변경 2026-10-23] 같은 패키지에서 직전 알림이 150ms 이내면 배민 자체 알림음이
+                //        이미 울렸으므로 우리 알림음 스킵
                 if (sbn.packageName == AppConstants.PKG_BAEMIN) {
-                    playOrderAlertSound()
-                    NotificationLogWriter.appendDebugEvent(
-                        this, "order_alert_sound_played",
-                        "package" to sbn.packageName,
-                        "reason" to "baemin_new_order"
-                    )
+                    val lastNotifAt = lastPkgNotificationAt[sbn.packageName] ?: 0L
+                    val sinceLast = SystemClock.elapsedRealtime() - lastNotifAt
+                    if (sinceLast > AppConstants.NOTIFICATION_SOUND_SUPPRESS_THRESHOLD_MS) {
+                        playOrderAlertSound()
+                        NotificationLogWriter.appendDebugEvent(
+                            this, "order_alert_sound_played",
+                            "package" to sbn.packageName,
+                            "reason" to "baemin_new_order"
+                        )
+                    } else {
+                        NotificationLogWriter.appendDebugEvent(
+                            this, "order_alert_sound_skipped",
+                            "package" to sbn.packageName,
+                            "reason" to "baemin_own_sound_already_played",
+                            "sinceLastMs" to sinceLast
+                        )
+                    }
                 }
 
                 NotificationLogWriter.appendDebugEvent(
@@ -222,37 +237,57 @@ class MusicNotificationListener : NotificationListenerService() {
         }, AppConstants.LAUNCH_INTENT_DELAY_MS)
     }
 
-    /** 배민 전용 — contentIntent 단독 실행으로 수락/거절 화면 직행 */
+    /** 배민 전용 — launchIntent(SINGLE_TOP)로 포그라운드 전환 후 contentIntent로 수락화면 딥링크 */
     private fun openBaemin(sbn: StatusBarNotification, contentIntent: PendingIntent?, launchIntent: Intent?) {
-        // [변경 이유] 배민의 contentIntent는 내부 BroadcastReceiver를 통한 딥링크로,
-        // 자체적으로 앱을 포그라운드로 전환하면서 수락/거절 화면까지 이동시킴.
-        // 기존에 launchIntent를 먼저 실행하면 배민이 이미 포그라운드 상태가 되어
-        // contentIntent의 딥링크가 "이미 열려 있으므로" 무시되는 문제가 있었음.
-        if (contentIntent != null) {
+        // [이전] contentIntent 단독 실행 (launchIntent 없이)
+        // [문제 2026-10-23] contentIntent.send()는 예외 없이 리턴되지만 실제로 배민이 포그라운드로
+        //   올라오지 않음. 로그: 6초간 무반응 → 사용자가 수동으로 최근앱에서 전환함.
+        //   contentIntent만으로는 다른 앱 위에서 배민을 포그라운드로 전환하지 못함.
+        // [이전 그 이전] launchIntent(REORDER_TO_FRONT) → contentIntent 2단계
+        // [그때 문제] launchIntent가 먼저 실행되면 배민이 이미 포그라운드 상태가 되어
+        //   contentIntent의 딥링크가 "이미 열려 있으므로" 무시됨 (수락/거절 화면 미이동)
+        // [변경 2026-10-23] 쿠팡과 동일하게 launchIntent(SINGLE_TOP) → contentIntent 2단계.
+        //   SINGLE_TOP은 REORDER_TO_FRONT와 달리 기존 Activity를 재생성하지 않으므로
+        //   contentIntent 딥링크가 정상 동작할 것으로 기대.
+        if (launchIntent != null) {
             try {
-                NotificationLogWriter.appendDebugEvent(
-                    this, "content_intent_info",
-                    "package" to sbn.packageName,
-                    "creatorPackage" to contentIntent.creatorPackage,
-                    "creatorUid" to contentIntent.creatorUid
-                )
-                contentIntent.send()
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                startActivity(launchIntent)
                 AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "성공(SINGLE_TOP)")
                 NotificationLogWriter.appendDebugEvent(
                     this, "delivery_app_switch_result",
                     "package" to sbn.packageName,
-                    "method" to "contentIntent_only",
+                    "method" to "launchIntent_single_top",
                     "result" to "success"
                 )
             } catch (e: Exception) {
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
-                // contentIntent 실패 시 launchIntent로 폴백
-                launchWithFallback(sbn, launchIntent)
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
             }
-        } else {
-            // contentIntent 없는 경우 launchIntent로 폴백
-            launchWithFallback(sbn, launchIntent)
+        }
+
+        if (contentIntent != null) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    NotificationLogWriter.appendDebugEvent(
+                        this, "content_intent_info",
+                        "package" to sbn.packageName,
+                        "creatorPackage" to contentIntent.creatorPackage,
+                        "creatorUid" to contentIntent.creatorUid
+                    )
+                    contentIntent.send()
+                    AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
+                    NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
+                } catch (e: Exception) {
+                    NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
+                }
+            }, AppConstants.CONTENT_INTENT_DELAY_MS)
+        } else if (launchIntent == null) {
+            NotificationLogWriter.appendDebugEvent(
+                this, "delivery_app_open_skipped",
+                "package" to sbn.packageName,
+                "reason" to "no_intent_available"
+            )
         }
     }
 

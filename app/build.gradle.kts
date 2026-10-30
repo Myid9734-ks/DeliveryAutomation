@@ -12,8 +12,8 @@ android {
         applicationId = "kr.deliveryauto.app"
         minSdk = 28
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.0.1"
+        versionCode = 5
+        versionName = "1.0.3"
     }
 
     buildTypes {

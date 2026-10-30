@@ -23,8 +23,8 @@ class MusicNotificationListener : NotificationListenerService() {
     private val lastAutoOpenAt = mutableMapOf<String, Long>()
     // 패키지 단위 중복 방지 — 같은 앱에서 다른 키로 연속 알림 시(배민 FCM 중복 발송 등) 차단
     private val lastAutoOpenPkgAt = mutableMapOf<String, Long>()
-    // 패키지별 마지막 알림 수신 시각 — 연속 알림으로 인한 알림음 억제 감지용
-    private val lastPkgNotificationAt = mutableMapOf<String, Long>()
+    // [제거 2026-10-30] lastPkgNotificationAt — 배민 알림음 중복 억제용이었으나,
+    // 배민 자체 채널 소리와 우리 소리가 항상 2번 울리는 근본 원인을 해결(배민 알림음 재생 중단)하여 불필요
 
     // 컨트롤러 부착 재시도 — 음악 앱 세션이 늦게 열리는 경우를 대비
     private val attachRetryHandler = Handler(Looper.getMainLooper())
@@ -93,39 +93,45 @@ class MusicNotificationListener : NotificationListenerService() {
 
         if (sbn.packageName in AppConstants.DELIVERY_PACKAGES) {
             NotificationLogWriter.append(this, sbn)
+            val n = sbn.notification
             NotificationLogWriter.appendDebugEvent(
                 this,
                 "delivery_notification_posted",
                 "package" to sbn.packageName,
                 "key" to sbn.key,
-                "channelId" to if (Build.VERSION.SDK_INT >= 26) sbn.notification.channelId else null,
-                "autoOpenEnabled" to AppPrefs.isOrderAutoOpenEnabled(this)
+                "channelId" to if (Build.VERSION.SDK_INT >= 26) n.channelId else null,
+                "autoOpenEnabled" to AppPrefs.isOrderAutoOpenEnabled(this),
+                // 진단용 — fullScreenIntent/contentIntent/sound/actions 존재 여부 확인
+                "hasFullScreenIntent" to (n.fullScreenIntent != null),
+                "hasContentIntent" to (n.contentIntent != null),
+                "hasSound" to (n.sound != null),
+                "soundUri" to n.sound?.toString(),
+                "actionCount" to (n.actions?.size ?: 0),
+                "actionLabels" to (n.actions?.joinToString(",") { it.title.toString() }),
+                "flags" to n.flags,
+                "defaults" to n.defaults
             )
 
             if (AppPrefs.isOrderAutoOpenEnabled(this) && isNewOrderNotification(sbn)) {
-                // [이전] 배민 신규주문 무조건 알림음 재생
-                // [문제] 배민이 BrosRiders 채널로 자체 알림음을 먼저 울리고(id=711),
-                //        직후 FCM(BROS_DELIVERY_ALLOCATION_NOTI)이 도착해 우리 알림음까지 → 2번 울림
-                // [변경 2026-10-23] 같은 패키지에서 직전 알림이 150ms 이내면 배민 자체 알림음이
-                //        이미 울렸으므로 우리 알림음 스킵
+                // [이전] 배민 150ms 임계값으로 BrosRiders→FCM 연속 도착 시 우리 알림음 스킵
+                // [문제 2026-10-30] 배민 BROS_DELIVERY_ALLOCATION_NOTI 채널 자체가 알림음을 가지고 있어서,
+                //   FCM이 단독 도착해도 "배민 채널 소리 + 우리 소리" = 2번 울림.
+                //   BrosRiders가 먼저 오는 케이스(sinceLastMs=18)만 잡고, FCM 단독 케이스는 못 잡음.
+                // [변경] 배민은 자체 채널 알림음이 있으므로 우리 앱에서는 알림음을 재생하지 않음.
+                //   쿠팡 등 다른 배달앱은 자체 알림음이 없으므로 기존대로 재생.
                 if (sbn.packageName == AppConstants.PKG_BAEMIN) {
-                    val lastNotifAt = lastPkgNotificationAt[sbn.packageName] ?: 0L
-                    val sinceLast = SystemClock.elapsedRealtime() - lastNotifAt
-                    if (sinceLast > AppConstants.NOTIFICATION_SOUND_SUPPRESS_THRESHOLD_MS) {
-                        playOrderAlertSound()
-                        NotificationLogWriter.appendDebugEvent(
-                            this, "order_alert_sound_played",
-                            "package" to sbn.packageName,
-                            "reason" to "baemin_new_order"
-                        )
-                    } else {
-                        NotificationLogWriter.appendDebugEvent(
-                            this, "order_alert_sound_skipped",
-                            "package" to sbn.packageName,
-                            "reason" to "baemin_own_sound_already_played",
-                            "sinceLastMs" to sinceLast
-                        )
-                    }
+                    NotificationLogWriter.appendDebugEvent(
+                        this, "order_alert_sound_skipped",
+                        "package" to sbn.packageName,
+                        "reason" to "baemin_channel_has_own_sound"
+                    )
+                } else if (sbn.packageName == AppConstants.PKG_COUPANG_EATS) {
+                    playOrderAlertSound()
+                    NotificationLogWriter.appendDebugEvent(
+                        this, "order_alert_sound_played",
+                        "package" to sbn.packageName,
+                        "reason" to "coupang_new_order"
+                    )
                 }
 
                 NotificationLogWriter.appendDebugEvent(
@@ -146,8 +152,7 @@ class MusicNotificationListener : NotificationListenerService() {
                 )
             }
 
-            // 마지막 알림 수신 시각 갱신 (신규주문 포함 모든 배달앱 알림)
-            lastPkgNotificationAt[sbn.packageName] = SystemClock.elapsedRealtime()
+            // [제거 2026-10-30] lastPkgNotificationAt 갱신 제거 — 배민 알림음 재생 자체를 중단하여 불필요
         }
 
         if (sbn.packageName in AppConstants.SUPPORTED_MUSIC_APPS) attachMusicControllers()
@@ -237,52 +242,87 @@ class MusicNotificationListener : NotificationListenerService() {
         }, AppConstants.LAUNCH_INTENT_DELAY_MS)
     }
 
-    /** 배민 전용 — launchIntent(SINGLE_TOP)로 포그라운드 전환 후 contentIntent로 수락화면 딥링크 */
+    /** 배민 전용 — fullScreenIntent 우선, 없으면 contentIntent 단독 실행 */
     private fun openBaemin(sbn: StatusBarNotification, contentIntent: PendingIntent?, launchIntent: Intent?) {
-        // [이전] contentIntent 단독 실행 (launchIntent 없이)
-        // [문제 2026-10-23] contentIntent.send()는 예외 없이 리턴되지만 실제로 배민이 포그라운드로
-        //   올라오지 않음. 로그: 6초간 무반응 → 사용자가 수동으로 최근앱에서 전환함.
-        //   contentIntent만으로는 다른 앱 위에서 배민을 포그라운드로 전환하지 못함.
-        // [이전 그 이전] launchIntent(REORDER_TO_FRONT) → contentIntent 2단계
-        // [그때 문제] launchIntent가 먼저 실행되면 배민이 이미 포그라운드 상태가 되어
-        //   contentIntent의 딥링크가 "이미 열려 있으므로" 무시됨 (수락/거절 화면 미이동)
-        // [변경 2026-10-23] 쿠팡과 동일하게 launchIntent(SINGLE_TOP) → contentIntent 2단계.
-        //   SINGLE_TOP은 REORDER_TO_FRONT와 달리 기존 Activity를 재생성하지 않으므로
-        //   contentIntent 딥링크가 정상 동작할 것으로 기대.
-        if (launchIntent != null) {
+        // [이전 2026-10-23] launchIntent(SINGLE_TOP) → contentIntent 2단계
+        // [문제 2026-10-30] launchIntent가 배민 메인 Activity를 foreground로 올리면,
+        //   배민이 자체적으로 띄우려는 수락/거절 fullScreenIntent 팝업이 suppress됨.
+        //   contentIntent.send()는 알림 상세 화면(systemui)을 열 뿐 수락/거절 딥링크가 아님.
+        //   로그: launchIntent 성공 → 배민커넥트 foreground → contentIntent 성공 → 알림 세부정보(systemui)
+        //         → 수락/거절 화면 미노출
+        // [변경] fullScreenIntent를 우선 사용 — 배민은 신규배달 알림에 fullScreenIntent로
+        //   수락/거절 팝업 Activity를 등록하며, 이것이 실제 배달 수락 화면.
+        //   launchIntent는 사용하지 않음 (메인 Activity가 올라오면 fullScreen 팝업과 충돌).
+        val fullScreenIntent = sbn.notification.fullScreenIntent
+
+        NotificationLogWriter.appendDebugEvent(
+            this, "baemin_intent_analysis",
+            "package" to sbn.packageName,
+            "hasFullScreenIntent" to (fullScreenIntent != null),
+            "hasContentIntent" to (contentIntent != null),
+            "hasLaunchIntent" to (launchIntent != null)
+        )
+
+        if (fullScreenIntent != null) {
+            // fullScreenIntent — 배민 수락/거절 팝업 Activity 직접 실행
+            try {
+                fullScreenIntent.send()
+                AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "fullScreenIntent", "성공")
+                NotificationLogWriter.appendDebugEvent(
+                    this, "delivery_app_switch_result",
+                    "package" to sbn.packageName,
+                    "method" to "fullScreenIntent",
+                    "result" to "success"
+                )
+            } catch (e: Exception) {
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "fullScreenIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
+                // fullScreenIntent 실패 시 contentIntent 시도
+                trySendContentIntent(sbn, contentIntent, launchIntent)
+            }
+        } else {
+            // fullScreenIntent 없음 — contentIntent 단독 시도, 실패 시 launchIntent fallback
+            trySendContentIntent(sbn, contentIntent, launchIntent)
+        }
+    }
+
+    /** 배민 fallback — contentIntent 단독 시도, 없으면 launchIntent */
+    private fun trySendContentIntent(sbn: StatusBarNotification, contentIntent: PendingIntent?, launchIntent: Intent?) {
+        if (contentIntent != null) {
+            try {
+                NotificationLogWriter.appendDebugEvent(
+                    this, "content_intent_info",
+                    "package" to sbn.packageName,
+                    "creatorPackage" to contentIntent.creatorPackage,
+                    "creatorUid" to contentIntent.creatorUid
+                )
+                contentIntent.send()
+                AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
+            } catch (e: Exception) {
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
+                // contentIntent도 실패 시 launchIntent fallback
+                if (launchIntent != null) {
+                    try {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        startActivity(launchIntent)
+                        AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
+                        NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "성공(fallback)")
+                    } catch (e2: Exception) {
+                        NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: ${e2.javaClass.simpleName}: ${e2.message}")
+                    }
+                }
+            }
+        } else if (launchIntent != null) {
             try {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 startActivity(launchIntent)
                 AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "성공(SINGLE_TOP)")
-                NotificationLogWriter.appendDebugEvent(
-                    this, "delivery_app_switch_result",
-                    "package" to sbn.packageName,
-                    "method" to "launchIntent_single_top",
-                    "result" to "success"
-                )
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "성공(no_content_intent)")
             } catch (e: Exception) {
                 NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
             }
-        }
-
-        if (contentIntent != null) {
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    NotificationLogWriter.appendDebugEvent(
-                        this, "content_intent_info",
-                        "package" to sbn.packageName,
-                        "creatorPackage" to contentIntent.creatorPackage,
-                        "creatorUid" to contentIntent.creatorUid
-                    )
-                    contentIntent.send()
-                    AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
-                    NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
-                } catch (e: Exception) {
-                    NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
-                }
-            }, AppConstants.CONTENT_INTENT_DELAY_MS)
-        } else if (launchIntent == null) {
+        } else {
             NotificationLogWriter.appendDebugEvent(
                 this, "delivery_app_open_skipped",
                 "package" to sbn.packageName,

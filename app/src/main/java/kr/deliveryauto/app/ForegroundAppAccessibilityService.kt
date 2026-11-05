@@ -197,6 +197,13 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
                 "slow" to (elapsedMs > 2000L)
             )
             AppPrefs.clearAutoOpenSentAt(this, packageName)
+
+            // [추가 2026-11-02] 신규주문 앱전환 직후 UI 노드 덤프
+            // 수락/거절 버튼 텍스트를 로그로 확인하기 위한 진단용 코드.
+            // 1.5초 후 덤프 — 앱 전환 후 화면 렌더링 대기
+            handler.postDelayed({
+                dumpUiNodesForDiagnostics(packageName)
+            }, 1500L)
         }
 
         AppPrefs.setNavSessionActive(this, false)
@@ -392,6 +399,54 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         pendingResumeRunnable?.let { handler.removeCallbacks(it) }
         pendingResumeRunnable = null
         pendingResumePackage = null
+    }
+
+    // [추가 2026-11-02] 신규주문 앱전환 직후 화면 UI 노드 덤프 (진단용)
+    // 배달앱의 수락/거절 버튼 텍스트, 클래스명, 클릭 가능 여부를 로그에 기록.
+    // AccessibilityService로 수락/거절 화면 자동 포커싱 구현 시 참고 데이터.
+    private fun dumpUiNodesForDiagnostics(packageName: String) {
+        try {
+            val root = rootInActiveWindow ?: return
+            val nodes = mutableListOf<String>()
+            collectUiNodes(root, nodes, 0)
+            if (nodes.isEmpty()) return
+
+            NotificationLogWriter.appendDebugEvent(
+                this,
+                "ui_node_dump",
+                "package" to packageName,
+                "nodeCount" to nodes.size,
+                "nodes" to nodes.joinToString("\n")
+            )
+        } catch (_: Exception) { }
+    }
+
+    private fun collectUiNodes(node: AccessibilityNodeInfo?, out: MutableList<String>, depth: Int) {
+        if (node == null || depth > 15) return
+
+        val text = node.text?.toString()?.trim().orEmpty()
+        val desc = node.contentDescription?.toString()?.trim().orEmpty()
+        val className = node.className?.toString()?.substringAfterLast('.').orEmpty()
+        val clickable = node.isClickable
+        val enabled = node.isEnabled
+
+        // 텍스트나 contentDescription이 있는 노드, 또는 클릭 가능한 노드만 기록
+        if (text.isNotEmpty() || desc.isNotEmpty() || clickable) {
+            val indent = "  ".repeat(depth)
+            val props = mutableListOf<String>()
+            if (text.isNotEmpty()) props.add("text=\"$text\"")
+            if (desc.isNotEmpty()) props.add("desc=\"$desc\"")
+            props.add("class=$className")
+            if (clickable) props.add("clickable")
+            if (!enabled) props.add("disabled")
+            out.add("$indent${props.joinToString(" | ")}")
+        }
+
+        for (i in 0 until node.childCount) {
+            try {
+                collectUiNodes(node.getChild(i), out, depth + 1)
+            } catch (_: Exception) { }
+        }
     }
 
     // 이벤트가 실제 포그라운드(활성) 윈도우에서 온 것인지 확인

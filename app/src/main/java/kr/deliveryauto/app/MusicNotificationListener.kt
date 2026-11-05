@@ -118,7 +118,8 @@ class MusicNotificationListener : NotificationListenerService() {
                 //   FCM이 단독 도착해도 "배민 채널 소리 + 우리 소리" = 2번 울림.
                 //   BrosRiders가 먼저 오는 케이스(sinceLastMs=18)만 잡고, FCM 단독 케이스는 못 잡음.
                 // [변경] 배민은 자체 채널 알림음이 있으므로 우리 앱에서는 알림음을 재생하지 않음.
-                //   쿠팡 등 다른 배달앱은 자체 알림음이 없으므로 기존대로 재생.
+                // [변경] 쿠팡도 알림음 재생 삭제 — 배민 전용 사운드(baemin_new_order)를 쿠팡 주문에 재생하는 것은 부적절.
+                //   쿠팡 전용 알림음이 별도로 준비되기 전까지 재생하지 않음.
                 if (sbn.packageName == AppConstants.PKG_BAEMIN) {
                     NotificationLogWriter.appendDebugEvent(
                         this, "order_alert_sound_skipped",
@@ -126,11 +127,11 @@ class MusicNotificationListener : NotificationListenerService() {
                         "reason" to "baemin_channel_has_own_sound"
                     )
                 } else if (sbn.packageName == AppConstants.PKG_COUPANG_EATS) {
-                    playOrderAlertSound()
+                    // [기존] playOrderAlertSound() — 배민 사운드(R.raw.baemin_new_order)를 쿠팡 주문에 재생하던 코드 제거
                     NotificationLogWriter.appendDebugEvent(
-                        this, "order_alert_sound_played",
+                        this, "order_alert_sound_skipped",
                         "package" to sbn.packageName,
-                        "reason" to "coupang_new_order"
+                        "reason" to "coupang_no_dedicated_sound"
                     )
                 }
 
@@ -242,47 +243,47 @@ class MusicNotificationListener : NotificationListenerService() {
         }, AppConstants.LAUNCH_INTENT_DELAY_MS)
     }
 
-    /** 배민 전용 — fullScreenIntent 우선, 없으면 contentIntent 단독 실행 */
+    /** 배민 전용 — launchIntent(SINGLE_TOP)로 포그라운드 전환만 수행 */
     private fun openBaemin(sbn: StatusBarNotification, contentIntent: PendingIntent?, launchIntent: Intent?) {
         // [이전 2026-10-23] launchIntent(SINGLE_TOP) → contentIntent 2단계
         // [문제 2026-10-30] launchIntent가 배민 메인 Activity를 foreground로 올리면,
         //   배민이 자체적으로 띄우려는 수락/거절 fullScreenIntent 팝업이 suppress됨.
         //   contentIntent.send()는 알림 상세 화면(systemui)을 열 뿐 수락/거절 딥링크가 아님.
-        //   로그: launchIntent 성공 → 배민커넥트 foreground → contentIntent 성공 → 알림 세부정보(systemui)
-        //         → 수락/거절 화면 미노출
-        // [변경] fullScreenIntent를 우선 사용 — 배민은 신규배달 알림에 fullScreenIntent로
-        //   수락/거절 팝업 Activity를 등록하며, 이것이 실제 배달 수락 화면.
-        //   launchIntent는 사용하지 않음 (메인 Activity가 올라오면 fullScreen 팝업과 충돌).
-        val fullScreenIntent = sbn.notification.fullScreenIntent
+        // [변경 2026-10-30] fullScreenIntent 우선 사용으로 변경
+        // [문제 2026-10-31] 실제 배민 알림은 hasFullScreenIntent=false (항상 null).
+        //   fullScreenIntent가 없으니 fallback으로 contentIntent만 실행 → systemui 알림 패널만 열림
+        //   → 앱 전환 자체가 안 되는 버그 발생 (launchIntent를 제거한 것이 원인)
+        // [변경 2026-11-02] launchIntent(SINGLE_TOP)만 단독 실행으로 복구.
+        //   fullScreenIntent, contentIntent 모두 제거 — 둘 다 앱 전환에 도움 안 됨.
+        //   수락/거절 화면 이동은 배민 앱 내부 처리에 맡김.
+        //   수락/거절 화면 강제 이동은 AccessibilityService로 별도 구현 예정.
 
-        NotificationLogWriter.appendDebugEvent(
-            this, "baemin_intent_analysis",
-            "package" to sbn.packageName,
-            "hasFullScreenIntent" to (fullScreenIntent != null),
-            "hasContentIntent" to (contentIntent != null),
-            "hasLaunchIntent" to (launchIntent != null)
-        )
-
-        if (fullScreenIntent != null) {
-            // fullScreenIntent — 배민 수락/거절 팝업 Activity 직접 실행
+        if (launchIntent != null) {
             try {
-                fullScreenIntent.send()
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                startActivity(launchIntent)
                 AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "fullScreenIntent", "성공")
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "성공(SINGLE_TOP)")
                 NotificationLogWriter.appendDebugEvent(
                     this, "delivery_app_switch_result",
                     "package" to sbn.packageName,
-                    "method" to "fullScreenIntent",
+                    "method" to "launchIntent_single_top",
                     "result" to "success"
                 )
             } catch (e: Exception) {
-                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "fullScreenIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
-                // fullScreenIntent 실패 시 contentIntent 시도
-                trySendContentIntent(sbn, contentIntent, launchIntent)
+                NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
             }
         } else {
-            // fullScreenIntent 없음 — contentIntent 단독 시도, 실패 시 launchIntent fallback
-            trySendContentIntent(sbn, contentIntent, launchIntent)
+            // [기존] fullScreenIntent → contentIntent fallback 코드 제거
+            // - fullScreenIntent: 배민 알림에 항상 null, 사용 불가
+            // - contentIntent: systemui 알림 패널만 열림, 앱 전환 방해
+            // if (fullScreenIntent != null) { fullScreenIntent.send() }
+            // else { trySendContentIntent(sbn, contentIntent, launchIntent) }
+            NotificationLogWriter.appendDebugEvent(
+                this, "delivery_app_open_skipped",
+                "package" to sbn.packageName,
+                "reason" to "no_launch_intent"
+            )
         }
     }
 
@@ -331,9 +332,27 @@ class MusicNotificationListener : NotificationListenerService() {
         }
     }
 
-    /** 쿠팡 전용 — launchIntent(SINGLE_TOP)로 포그라운드 전환 후 contentIntent로 주문 화면 이동 */
+    /** 쿠팡 전용 — launchIntent(SINGLE_TOP)로 포그라운드 전환만 수행 */
     private fun openCoupang(sbn: StatusBarNotification, contentIntent: PendingIntent?, launchIntent: Intent?) {
-        // 1단계: launchIntent로 포그라운드 전환 (SINGLE_TOP으로 콜드스타트 방지)
+        // [기존] launchIntent(SINGLE_TOP) → contentIntent 2단계 실행
+        // [문제 2026-10-31] launchIntent로 이미 쿠팡이 포그라운드에 올라온 상태에서
+        //   contentIntent.send()가 실행되면 Flutter 앱 특성상 SplashActivity가 재생성되어
+        //   앱이 처음 실행되는 것처럼 보이는 현상 발생 (콜드스타트 체감).
+        //   로그: contentIntent 실행 후 4초 만에 foreground_exit → 재진입까지 22~26초 소요.
+        // [변경] contentIntent 2단계 제거, launchIntent(SINGLE_TOP)만 단독 실행
+        //
+        // [수정방향 2026-11-02] 쿠팡 수락/거절 화면 강제 이동
+        //   현재 문제: launchIntent만으로는 배달 중 추가 주문 시 수락/거절 화면으로 이동 안 됨.
+        //     - 쿠팡 APK 분석 결과: fullScreenIntent 없음, contentIntent는 systemui(알림 패널)를 열 뿐.
+        //     - courier:// 딥링크는 SplashActivity로 가서 앱 재시작됨.
+        //     - EatsDeliveryFlutterActivity는 exported=false → 외부 Intent 진입 불가.
+        //   해결 방안: AccessibilityService로 쿠팡 앱 내부 수락/거절 UI 감지 → 자동 포커싱
+        //     1) launchIntent(SINGLE_TOP)로 쿠팡 포그라운드 전환 (현재 코드)
+        //     2) AccessibilityService에서 쿠팡 포그라운드 진입 감지
+        //     3) 쿠팡 화면 내 수락/거절 버튼 텍스트를 AccessibilityNodeInfo로 탐색
+        //     4) 해당 노드가 발견되면 스크롤/포커싱으로 수락/거절 화면 노출 유도
+        //   필요 정보: 쿠팡 신규주문 수락/거절 화면의 버튼 텍스트 (스크린샷으로 확인 예정)
+
         if (launchIntent != null) {
             try {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -349,26 +368,14 @@ class MusicNotificationListener : NotificationListenerService() {
             } catch (e: Exception) {
                 NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "launchIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
             }
-        }
-
-        // 2단계: contentIntent로 주문 수락/거절 화면 딥링크
-        if (contentIntent != null) {
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    NotificationLogWriter.appendDebugEvent(
-                        this, "content_intent_info",
-                        "package" to sbn.packageName,
-                        "creatorPackage" to contentIntent.creatorPackage,
-                        "creatorUid" to contentIntent.creatorUid
-                    )
-                    contentIntent.send()
-                    AppPrefs.setLastAutoOpenSentAt(this, sbn.packageName, SystemClock.elapsedRealtime())
-                    NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
-                } catch (e: Exception) {
-                    NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "실패: ${e.javaClass.simpleName}: ${e.message}")
-                }
-            }, AppConstants.CONTENT_INTENT_DELAY_MS)
-        } else if (launchIntent == null) {
+        } else {
+            // [기존] 2단계 contentIntent 코드 제거 — 쿠팡 Flutter 앱 재시작 방지
+            // if (contentIntent != null) {
+            //     Handler(Looper.getMainLooper()).postDelayed({
+            //         contentIntent.send()
+            //         NotificationLogWriter.appendAutoOpenResult(this, sbn.packageName, "contentIntent", "성공")
+            //     }, AppConstants.CONTENT_INTENT_DELAY_MS)
+            // }
             NotificationLogWriter.appendDebugEvent(
                 this, "delivery_app_open_skipped",
                 "package" to sbn.packageName,
